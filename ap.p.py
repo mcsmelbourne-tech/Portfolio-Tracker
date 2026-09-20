@@ -24,7 +24,6 @@ CAPITAL_FILE = "market_capitals.csv"
 
 
 def get_default_portfolio():
-  # Preloaded portfolio from Invest Right Equity Portfolio CSV
   data = [
       [
           1,
@@ -702,9 +701,9 @@ for col, (m_title, curr, start_c, profit_c, curr_c, m_df) in zip(
 
 st.markdown("---")
 
-# --- DASHBOARD SECTION: ADD NEW TRADE & EXCEL IMPORT ---
-with st.expander("➕ Add New Trade / Import from Excel", expanded=df.empty):
-  tab_single, tab_excel = st.tabs(["Manual Entry", "📥 Import from Excel"])
+# --- DASHBOARD SECTION: ADD NEW TRADE & FILE IMPORT ---
+with st.expander("➕ Add New Trade / Import from File", expanded=df.empty):
+  tab_single, tab_excel = st.tabs(["Manual Entry", "📥 Import from File"])
 
   with tab_single:
     with st.form("trade_form", clear_on_submit=True):
@@ -766,14 +765,22 @@ with st.expander("➕ Add New Trade / Import from Excel", expanded=df.empty):
 
   with tab_excel:
     st.markdown(
-        "Upload an Excel file (`.xlsx`) containing your trades. The file"
-        " should ideally include columns: **Date, Ticker, Market, Type,"
-        " Quantity, Buy Price, Sell Price, Status**."
+        "Upload your file (`.csv` or `.xlsx`) containing your trades. CSV files"
+        " work instantly without extra package dependencies!"
     )
-    uploaded_file = st.file_uploader("Choose an Excel file", type=["xlsx", "xls"])
+    uploaded_file = st.file_uploader(
+        "Choose a file", type=["csv", "xlsx", "xls"]
+    )
     if uploaded_file is not None:
       try:
-        imported_df = pd.read_excel(uploaded_file)
+        if uploaded_file.name.endswith(".csv"):
+          imported_df = pd.read_csv(uploaded_file)
+        else:
+          try:
+            imported_df = pd.read_excel(uploaded_file, engine="openpyxl")
+          except Exception:
+            imported_df = pd.read_excel(uploaded_file)
+
         st.write("Preview of imported data:", imported_df.head())
 
         if st.button("Confirm and Append Trades"):
@@ -786,36 +793,26 @@ with st.expander("➕ Add New Trade / Import from Excel", expanded=df.empty):
               else 1
           )
 
-          expected_cols = [
-              "Date",
-              "Ticker",
-              "Market",
-              "Type",
-              "Quantity",
-              "Buy Price",
-              "Sell Price",
-              "Status",
-          ]
-          for col in expected_cols:
-            if col not in imported_df.columns:
-              imported_df[col] = (
-                  ""
-                  if col in ["Date", "Ticker", "Market", "Type", "Status"]
-                  else 0.0
-              )
-
           processed_rows = []
           curr_id = start_id
           for _, row in imported_df.iterrows():
+            # Handle column name variations flexibly
+            t_sym = str(
+                row.get("Ticker", row.get("SYMBOL", ""))
+            ).strip().upper()
+            qty = float(row.get("Quantity", row.get("QTY", 1.0)))
+            b_pr = float(row.get("Buy Price", row.get("AVG PRICE", 0.0)))
+            s_pr = float(row.get("Sell Price", row.get("LTP", 0.0)))
+
             processed_rows.append({
                 "ID": curr_id,
                 "Date": str(row.get("Date", datetime.date.today())),
-                "Ticker": str(row.get("Ticker", "")).strip().upper(),
-                "Market": str(row.get("Market", "USA (USD)")),
+                "Ticker": t_sym,
+                "Market": str(row.get("Market", "India (INR)")),
                 "Type": str(row.get("Type", "Buy/Long")),
-                "Quantity": float(row.get("Quantity", 1.0)),
-                "Buy Price": float(row.get("Buy Price", 0.0)),
-                "Sell Price": float(row.get("Sell Price", 0.0)),
+                "Quantity": qty,
+                "Buy Price": b_pr,
+                "Sell Price": s_pr,
                 "Status": str(row.get("Status", "Active")),
             })
             curr_id += 1
@@ -824,11 +821,14 @@ with st.expander("➕ Add New Trade / Import from Excel", expanded=df.empty):
           combined_df = pd.concat([new_import_df, raw_df], ignore_index=True)
           save_data(combined_df)
           st.success(
-              f"Successfully imported {len(new_import_df)} trades from Excel!"
+              f"Successfully imported {len(new_import_df)} trades from file!"
           )
           st.rerun()
       except Exception as e:
-        st.error(f"Error reading Excel file: {e}")
+        st.error(
+            f"Error reading file: {e}. Tip: Save your Excel file as a **CSV**"
+            " and upload that instead to avoid package issues!"
+        )
 
 st.markdown("---")
 
@@ -912,5 +912,5 @@ if not df.empty:
 else:
   st.info(
       "No trades recorded yet. Use the **'➕ Add New Trade / Import from"
-      " Excel'** section above to get started!"
+      " File'** section above to get started!"
   )
