@@ -309,14 +309,13 @@ for col, (m_title, curr, start_c, profit_c, curr_c, m_df) in zip(
     with sub_col2:
       if not m_df.empty:
         fig_mini = px.pie(
-            m_df,
-            names="Symbol",
-            values="Raw Curr",
-            hole=0.4,
-            height=140,
-            margin=dict(t=10, b=10, l=10, r=10),
+            m_df, names="Symbol", values="Raw Curr", hole=0.4
         )
-        fig_mini.update_layout(showlegend=False)
+        fig_mini.update_layout(
+            showlegend=False,
+            margin=dict(t=10, b=10, l=10, r=10),
+            height=140,
+        )
         st.plotly_chart(
             fig_mini, use_container_width=True, config={"displayModeBar": False}
         )
