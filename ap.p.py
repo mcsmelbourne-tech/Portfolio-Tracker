@@ -9,16 +9,18 @@ st.set_page_config(
     page_title="Stock Portfolio & Trade Tracker", page_icon="📈", layout="wide"
 )
 
-# Custom CSS for compact metrics & broker-style dark layout styling
+# Custom CSS for compact metrics & fonts
 st.markdown("""
     <style>
-        h3 { font-size: 1.1rem !important; }
-        div[data-testid="stMetricValue"] { font-size: 1.15rem !important; }
-        div[data-testid="stMetricLabel"] { font-size: 0.75rem !important; }
+        h3 { font-size: 1.0rem !important; }
+        h4 { font-size: 0.9rem !important; }
+        div[data-testid="stMetricValue"] { font-size: 1.05rem !important; }
+        div[data-testid="stMetricLabel"] { font-size: 0.7rem !important; }
     </style>
 """, unsafe_allow_html=True)
 
 DATA_FILE = "portfolio_trades.csv"
+CAPITAL_FILE = "market_capitals.csv"
 
 
 def load_data():
@@ -49,6 +51,23 @@ def save_data(df):
   df.to_csv(DATA_FILE, index=False)
 
 
+def load_manual_capitals():
+  try:
+    cdf = pd.read_csv(CAPITAL_FILE)
+    return {
+        row["Market"]: float(row["Starting Capital"]) for _, row in cdf.iterrows()
+    }
+  except Exception:
+    return {"India (INR)": 0.0, "USA (USD)": 0.0, "CFD (AUD)": 0.0}
+
+
+def save_manual_capitals(caps):
+  cdf = pd.DataFrame(
+      list(caps.items()), columns=["Market", "Starting Capital"]
+  )
+  cdf.to_csv(CAPITAL_FILE, index=False)
+
+
 def fetch_current_price(ticker):
   try:
     stock = yf.Ticker(ticker)
@@ -61,15 +80,11 @@ def fetch_current_price(ticker):
 
 
 df = load_data()
+manual_caps = load_manual_capitals()
 
 # Ensure correct sorting: Newest trades on top
 if not df.empty and "ID" in df.columns:
   df = df.sort_values(by="ID", ascending=False).reset_index(drop=True)
-
-# Calculations for live prices, profits, and market categorizations
-india_start = india_profit = india_current = 0.0
-usa_start = usa_profit = usa_current = 0.0
-cfd_start = cfd_profit = cfd_current = 0.0
 
 global_invested = 0.0
 global_current_val = 0.0
@@ -109,7 +124,6 @@ if not df.empty:
       flag = "🇺🇸"
       curr_symbol = "$"
 
-    # Fetch live LTP (Last Traded Price)
     if t_status == "Active":
       c_price = fetch_current_price(t_ticker)
       if c_price is None:
@@ -152,25 +166,77 @@ if not df.empty:
   usa_df = display_df[display_df["Market"] == "USA (USD)"]
   cfd_df = display_df[display_df["Market"] == "CFD (AUD)"]
 
-  if not india_df.empty:
-    india_start = india_df["Raw Inv"].sum()
-    india_profit = india_df["Raw P&L"].sum()
-    india_current = india_start + india_profit
+  india_profit = india_df["Raw P&L"].sum() if not india_df.empty else 0.0
+  india_current = (
+      manual_caps.get("India (INR)", 0.0)
+      + india_df["Raw Curr"].sum()
+      if not india_df.empty
+      else manual_caps.get("India (INR)", 0.0)
+  )
 
-  if not usa_df.empty:
-    usa_start = usa_df["Raw Inv"].sum()
-    usa_profit = usa_df["Raw P&L"].sum()
-    usa_current = usa_start + usa_profit
+  usa_profit = usa_df["Raw P&L"].sum() if not usa_df.empty else 0.0
+  usa_current = (
+      manual_caps.get("USA (USD)", 0.0) + usa_df["Raw Curr"].sum()
+      if not usa_df.empty
+      else manual_caps.get("USA (USD)", 0.0)
+  )
 
-  if not cfd_df.empty:
-    cfd_start = cfd_df["Raw Inv"].sum()
-    cfd_profit = cfd_df["Raw P&L"].sum()
-    cfd_current = cfd_start + cfd_profit
+  cfd_profit = cfd_df["Raw P&L"].sum() if not cfd_df.empty else 0.0
+  cfd_current = (
+      manual_caps.get("CFD (AUD)", 0.0) + cfd_df["Raw Curr"].sum()
+      if not cfd_df.empty
+      else manual_caps.get("CFD (AUD)", 0.0)
+  )
+else:
+  display_df = pd.DataFrame()
+  india_df = usa_df = cfd_df = pd.DataFrame()
+  india_profit = usa_profit = cfd_profit = 0.0
+  india_current = manual_caps.get("India (INR)", 0.0)
+  usa_current = manual_caps.get("USA (USD)", 0.0)
+  cfd_current = manual_caps.get("CFD (AUD)", 0.0)
 
-# --- TOP BROKER SUMMARY BANNER ---
+# --- HEADER SECTION ---
 st.title("📈 Stock Portfolio & Trade Tracker")
 st.markdown("---")
 
+# --- CAPITAL CONFIGURATION EXPANDER ---
+with st.expander("⚙️ Set / Update Starting Capital for Markets"):
+  with st.form("capital_form"):
+    c_col1, c_col2, c_col3 = st.columns(3)
+    with c_col1:
+      new_ind_cap = st.number_input(
+          "🇮🇳 India Starting Capital (₹)",
+          min_value=0.0,
+          value=manual_caps.get("India (INR)", 0.0),
+          step=1000.0,
+      )
+    with c_col2:
+      new_usa_cap = st.number_input(
+          "🇺🇸 USA Starting Capital ($)",
+          min_value=0.0,
+          value=manual_caps.get("USA (USD)", 0.0),
+          step=100.0,
+      )
+    with c_col3:
+      new_cfd_cap = st.number_input(
+          "🇦🇺 CFD Starting Capital ($)",
+          min_value=0.0,
+          value=manual_caps.get("CFD (AUD)", 0.0),
+          step=100.0,
+      )
+
+    cap_submitted = st.form_submit_button("Save Starting Capitals")
+    if cap_submitted:
+      updated_caps = {
+          "India (INR)": new_ind_cap,
+          "USA (USD)": new_usa_cap,
+          "CFD (AUD)": new_cfd_cap,
+      }
+      save_manual_capitals(updated_caps)
+      st.success("Starting capitals updated successfully!")
+      st.rerun()
+
+# --- TOP BROKER SUMMARY BANNER ---
 if not df.empty:
   col_s1, col_s2, col_s3, col_s4 = st.columns(4)
   with col_s1:
@@ -190,38 +256,72 @@ if not df.empty:
     )
   with col_s4:
     st.metric("Realised P&L", f"${global_realised_pl:,.2f}")
-
   st.markdown("---")
 
-# --- REGIONAL METRICS & PIE CHARTS ---
+# --- REGIONAL METRICS & PIE CHARTS SIDE-BY-SIDE ---
 st.subheader("🌍 Regional Capital & Profit Overview")
-col_ind, col_usa, col_cfd = st.columns(3)
 
-with col_ind:
-  st.markdown("### 🇮🇳 India Market")
-  st.metric("Starting Capital", f"₹{india_start:,.2f}")
-  st.metric(
-      "Net Profit / Loss",
-      f"₹{india_profit:,.2f}",
-      delta=f"₹{india_profit:,.2f}",
-  )
-  st.metric("Current Capital", f"₹{india_current:,.2f}")
+market_cols = st.columns(3)
 
-with col_usa:
-  st.markdown("### 🇺🇸 USA Market")
-  st.metric("Starting Capital", f"${usa_start:,.2f}")
-  st.metric(
-      "Net Profit / Loss", f"${usa_profit:,.2f}", delta=f"${usa_profit:,.2f}"
-  )
-  st.metric("Current Capital", f"${usa_current:,.2f}")
+markets_data = [
+    (
+        "🇮🇳 India Market",
+        "₹",
+        manual_caps.get("India (INR)", 0.0),
+        india_profit,
+        india_current,
+        india_df,
+    ),
+    (
+        "🇺🇸 USA Market",
+        "$",
+        manual_caps.get("USA (USD)", 0.0),
+        usa_profit,
+        usa_current,
+        usa_df,
+    ),
+    (
+        "🇦🇺 CFD Market (Australia)",
+        "$",
+        manual_caps.get("CFD (AUD)", 0.0),
+        cfd_profit,
+        cfd_current,
+        cfd_df,
+    ),
+]
 
-with col_cfd:
-  st.markdown("### 🇦🇺 CFD Market (Australia)")
-  st.metric("Starting Capital", f"${cfd_start:,.2f}")
-  st.metric(
-      "Net Profit / Loss", f"${cfd_profit:,.2f}", delta=f"${cfd_profit:,.2f}"
-  )
-  st.metric("Current Capital", f"${cfd_current:,.2f}")
+for col, (m_title, curr, start_c, profit_c, curr_c, m_df) in zip(
+    market_cols, markets_data
+):
+  with col:
+    st.markdown(f"### {m_title}")
+    sub_col1, sub_col2 = st.columns([1.2, 0.8])
+
+    with sub_col1:
+      st.metric("Starting Capital", f"{curr}{start_c:,.2f}")
+      st.metric(
+          "Net Profit / Loss",
+          f"{curr}{profit_c:,.2f}",
+          delta=f"{curr}{profit_c:,.2f}",
+      )
+      st.metric("Current Capital", f"{curr}{curr_c:,.2f}")
+
+    with sub_col2:
+      if not m_df.empty:
+        fig_mini = px.pie(
+            m_df,
+            names="Symbol",
+            values="Raw Curr",
+            hole=0.4,
+            height=140,
+            margin=dict(t=10, b=10, l=10, r=10),
+        )
+        fig_mini.update_layout(showlegend=False)
+        st.plotly_chart(
+            fig_mini, use_container_width=True, config={"displayModeBar": False}
+        )
+      else:
+        st.caption("No allocation")
 
 st.markdown("---")
 
@@ -285,7 +385,6 @@ with st.expander("➕ Add New Trade", expanded=df.empty):
 st.markdown("---")
 
 if not df.empty:
-  # Main Dashboard Tabs
   tab1, tab2, tab3 = st.tabs(
       [
           "📋 Broker Trade Ledger",
@@ -296,7 +395,6 @@ if not df.empty:
 
   with tab1:
     st.subheader("📋 Active & Closed Broker Ledger")
-    # Display clean broker columns layout excluding raw helper columns
     cols_to_display = [
         "ID",
         "Symbol",
