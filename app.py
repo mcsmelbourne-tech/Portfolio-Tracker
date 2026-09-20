@@ -9,13 +9,13 @@ st.set_page_config(
     page_title="Stock Portfolio & Trade Tracker", page_icon="📈", layout="wide"
 )
 
-# Custom CSS for compact metrics, fonts, and positive/negative colors
+# Custom CSS for slightly increased fonts and positive/negative colors
 st.markdown("""
     <style>
-        h3 { font-size: 1.0rem !important; }
-        h4 { font-size: 0.9rem !important; }
-        div[data-testid="stMetricValue"] { font-size: 1.05rem !important; }
-        div[data-testid="stMetricLabel"] { font-size: 0.7rem !important; }
+        h3 { font-size: 1.1rem !important; }
+        h4 { font-size: 1.0rem !important; }
+        div[data-testid="stMetricValue"] { font-size: 1.15rem !important; }
+        div[data-testid="stMetricLabel"] { font-size: 0.8rem !important; }
         .profit-green { color: #00FF66; font-weight: bold; }
         .loss-red { color: #FF3333; font-weight: bold; }
     </style>
@@ -542,6 +542,7 @@ if not df.empty:
             "Total P&L %": f"{pl_pct:,.2f}%",
             "Market": market,
             "Raw P&L": pl,
+            "Raw P&L %": pl_pct,
             "Raw Inv": inv_val,
             "Raw Curr": curr_val,
         })
@@ -931,14 +932,14 @@ if not df.empty:
             "Current Value",
             "Total P&L",
             "Total P&L %",
-            "Raw P&L",
+            "Raw P&L %",
         ]].copy()
 
-        def color_pnl(val):
+        def color_pnl_pct(val):
             if isinstance(val, (int, float)):
                 num = val
             else:
-                cleaned = str(val).replace('$', '').replace('₹', '').replace(',', '').strip()
+                cleaned = str(val).replace('%', '').replace(',', '').strip()
                 try:
                     num = float(cleaned)
                 except ValueError:
@@ -947,8 +948,8 @@ if not df.empty:
             return f'color: {color}'
 
         styled_table = editor_display_df.style.map(
-            color_pnl, subset=["Total P&L", "Raw P&L"]
-        ).format({"Raw P&L": "{:.2f}"})
+            color_pnl_pct, subset=["Total P&L %", "Raw P&L %"]
+        ).format({"Raw P&L %": "{:.2f}%"})
 
         edited_table = st.data_editor(
             styled_table,
@@ -960,7 +961,7 @@ if not df.empty:
                     required=True,
                 ),
                 "ID": st.column_config.NumberColumn("ID", disabled=True),
-                "Raw P&L": None,
+                "Raw P&L %": None,
             },
             disabled=[
                 "ID",
