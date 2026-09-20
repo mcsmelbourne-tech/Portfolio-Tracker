@@ -324,62 +324,136 @@ for col, (m_title, curr, start_c, profit_c, curr_c, m_df) in zip(
 
 st.markdown("---")
 
-# --- DASHBOARD SECTION: ADD NEW TRADE ---
-with st.expander("➕ Add New Trade", expanded=df.empty):
-  with st.form("trade_form", clear_on_submit=True):
-    col1, col2, col3 = st.columns(3)
-    with col1:
-      trade_date = st.date_input("Trade Date", datetime.date.today())
-      ticker = st.text_input(
-          "Ticker Symbol (e.g., AAPL, RELIANCE.NS, BHP.AX)", ""
-      ).upper()
-    with col2:
-      market_selection = st.selectbox(
-          "Market / Currency Group", ["USA (USD)", "India (INR)", "CFD (AUD)"]
-      )
-      trade_type = st.selectbox("Type", ["Buy/Long", "Sell/Short"])
-    with col3:
-      quantity = st.number_input("Quantity", min_value=0.01, value=10.0, step=1.0)
-      buy_price = st.number_input(
-          "Buy Price", min_value=0.01, value=100.0, step=0.1
-      )
+# --- DASHBOARD SECTION: ADD NEW TRADE & EXCEL IMPORT ---
+with st.expander("➕ Add New Trade / Import from Excel", expanded=df.empty):
+  tab_single, tab_excel = st.tabs(["Manual Entry", "📥 Import from Excel"])
 
-    status = st.selectbox("Status", ["Active", "Closed"])
-    sell_price = 0.0
-    if status == "Closed":
-      sell_price = st.number_input(
-          "Sell Price", min_value=0.0, value=105.0, step=0.1
-      )
-
-    submitted = st.form_submit_button("Save Trade to Dashboard")
-
-    if submitted:
-      if not ticker:
-        st.error("Please enter a ticker symbol.")
-      else:
-        raw_df = load_data()
-        new_id = (
-            int(raw_df["ID"].max()) + 1
-            if not raw_df.empty
-            and "ID" in raw_df.columns
-            and pd.notna(raw_df["ID"].max())
-            else 1
+  with tab_single:
+    with st.form("trade_form", clear_on_submit=True):
+      col1, col2, col3 = st.columns(3)
+      with col1:
+        trade_date = st.date_input("Trade Date", datetime.date.today())
+        ticker = st.text_input(
+            "Ticker Symbol (e.g., AAPL, RELIANCE.NS, BHP.AX)", ""
+        ).upper()
+      with col2:
+        market_selection = st.selectbox(
+            "Market / Currency Group", ["USA (USD)", "India (INR)", "CFD (AUD)"]
         )
-        new_row = pd.DataFrame({
-            "ID": [new_id],
-            "Date": [str(trade_date)],
-            "Ticker": [ticker.strip().upper()],
-            "Market": [market_selection],
-            "Type": [trade_type],
-            "Quantity": [quantity],
-            "Buy Price": [buy_price],
-            "Sell Price": [sell_price if status == "Closed" else 0.0],
-            "Status": [status],
-        })
-        raw_df = pd.concat([new_row, raw_df], ignore_index=True)
-        save_data(raw_df)
-        st.success(f"Trade for {ticker} added successfully!")
-        st.rerun()
+        trade_type = st.selectbox("Type", ["Buy/Long", "Sell/Short"])
+      with col3:
+        quantity = st.number_input(
+            "Quantity", min_value=0.01, value=10.0, step=1.0
+        )
+        buy_price = st.number_input(
+            "Buy Price", min_value=0.01, value=100.0, step=0.1
+        )
+
+      status = st.selectbox("Status", ["Active", "Closed"])
+      sell_price = 0.0
+      if status == "Closed":
+        sell_price = st.number_input(
+            "Sell Price", min_value=0.0, value=105.0, step=0.1
+        )
+
+      submitted = st.form_submit_button("Save Trade to Dashboard")
+
+      if submitted:
+        if not ticker:
+          st.error("Please enter a ticker symbol.")
+        else:
+          raw_df = load_data()
+          new_id = (
+              int(raw_df["ID"].max()) + 1
+              if not raw_df.empty
+              and "ID" in raw_df.columns
+              and pd.notna(raw_df["ID"].max())
+              else 1
+          )
+          new_row = pd.DataFrame({
+              "ID": [new_id],
+              "Date": [str(trade_date)],
+              "Ticker": [ticker.strip().upper()],
+              "Market": [market_selection],
+              "Type": [trade_type],
+              "Quantity": [quantity],
+              "Buy Price": [buy_price],
+              "Sell Price": [sell_price if status == "Closed" else 0.0],
+              "Status": [status],
+          })
+          raw_df = pd.concat([new_row, raw_df], ignore_index=True)
+          save_data(raw_df)
+          st.success(f"Trade for {ticker} added successfully!")
+          st.rerun()
+
+  with tab_excel:
+    st.markdown(
+        "Upload an Excel file (`.xlsx`) containing your trades. The file"
+        " should ideally include columns: **Date, Ticker, Market, Type,"
+        " Quantity, Buy Price, Sell Price, Status**."
+    )
+    uploaded_file = st.file_uploader("Choose an Excel file", type=["xlsx", "xls"])
+    if uploaded_file is not None:
+      try:
+        imported_df = pd.read_excel(uploaded_file)
+        st.write("Preview of imported data:", imported_df.head())
+
+        if st.button("Confirm and Append Trades"):
+          raw_df = load_data()
+          start_id = (
+              int(raw_df["ID"].max()) + 1
+              if not raw_df.empty
+              and "ID" in raw_df.columns
+              and pd.notna(raw_df["ID"].max())
+              else 1
+          )
+
+          # Normalize / map columns if needed
+          expected_cols = [
+              "Date",
+              "Ticker",
+              "Market",
+              "Type",
+              "Quantity",
+              "Buy Price",
+              "Sell Price",
+              "Status",
+          ]
+          for col in expected_cols:
+            if col not in imported_df.columns:
+              imported_df[col] = (
+                  ""
+                  if col in ["Date", "Ticker", "Market", "Type", "Status"]
+                  else 0.0
+              )
+
+          processed_rows = []
+          curr_id = start_id
+          for _, row in imported_df.iterrows():
+            processed_rows.append({
+                "ID": curr_id,
+                "Date": str(row.get("Date", datetime.date.today())),
+                "Ticker": str(row.get("Ticker", "")).strip().upper(),
+                "Market": str(
+                    row.get("Market", "USA (USD)")
+                ),  # default fallback
+                "Type": str(row.get("Type", "Buy/Long")),
+                "Quantity": float(row.get("Quantity", 1.0)),
+                "Buy Price": float(row.get("Buy Price", 0.0)),
+                "Sell Price": float(row.get("Sell Price", 0.0)),
+                "Status": str(row.get("Status", "Active")),
+            })
+            curr_id += 1
+
+          new_import_df = pd.DataFrame(processed_rows)
+          combined_df = pd.concat([new_import_df, raw_df], ignore_index=True)
+          save_data(combined_df)
+          st.success(
+              f"Successfully imported {len(new_import_df)} trades from Excel!"
+          )
+          st.rerun()
+      except Exception as e:
+        st.error(f"Error reading Excel file: {e}")
 
 st.markdown("---")
 
@@ -462,6 +536,6 @@ if not df.empty:
 
 else:
   st.info(
-      "No trades recorded yet. Use the **'➕ Add New Trade'** section above to"
-      " get started!"
+      "No trades recorded yet. Use the **'➕ Add New Trade / Import from"
+      " Excel'** section above to get started!"
   )
