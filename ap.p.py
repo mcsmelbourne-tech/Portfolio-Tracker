@@ -61,17 +61,75 @@ def fetch_current_price(ticker):
   return None
 
 
-st.title("📈 Stock Portfolio & Trade Tracker")
-st.markdown(
-    "Manage your trades, view live market prices, and monitor capital and"
-    " performance."
-)
-
 df = load_data()
 
 # Ensure correct sorting: Newest trades on top
 if not df.empty and "ID" in df.columns:
   df = df.sort_values(by="ID", ascending=False).reset_index(drop=True)
+
+# Calculations for live prices and profits if df is not empty
+starting_capital = 0.0
+total_profit = 0.0
+current_capital = 0.0
+active_df = pd.DataFrame()
+
+if not df.empty:
+  current_prices = []
+  current_values = []
+  profits = []
+  profit_pcts = []
+
+  for idx, row in df.iterrows():
+    t_ticker = row["Ticker"]
+    qty = float(row["Quantity"])
+    b_price = float(row["Buy Price"])
+    s_price = float(row["Sell Price"])
+    t_status = row["Status"]
+
+    if t_status == "Active":
+      c_price = fetch_current_price(t_ticker)
+      if c_price is None:
+        c_price = b_price
+      curr_val = qty * c_price
+      profit = (c_price - b_price) * qty
+      profit_pct = ((c_price - b_price) / b_price) * 100 if b_price > 0 else 0
+    else:
+      c_price = s_price
+      curr_val = qty * s_price
+      profit = (s_price - b_price) * qty
+      profit_pct = ((s_price - b_price) / b_price) * 100 if b_price > 0 else 0
+
+    current_prices.append(c_price)
+    current_values.append(curr_val)
+    profits.append(round(profit, 2))
+    profit_pcts.append(round(profit_pct, 2))
+
+  df["Current Price"] = current_prices
+  df["Current Value"] = current_values
+  df["Profit/Loss ($)"] = profits
+  df["Profit/Loss (%)"] = profit_pcts
+
+  active_df = df[df["Status"] == "Active"]
+  starting_capital = (df["Quantity"] * df["Buy Price"]).sum()
+  total_profit = df["Profit/Loss ($)"].sum()
+  current_capital = starting_capital + total_profit
+
+# --- HEADER SECTION WITH CAPITAL METRICS RIGHT NEXT TO TITLE ---
+head_col1, head_col2, head_col3, head_col4 = st.columns([2, 1, 1, 1])
+with head_col1:
+  st.title("📈 Stock Portfolio & Trade Tracker")
+with head_col2:
+  st.metric("Starting Capital", f"${starting_capital:,.2f}")
+with head_col3:
+  st.metric("Total Profit", f"${total_profit:,.2f}", delta=f"${total_profit:,.2f}")
+with head_col4:
+  st.metric("Current Capital", f"${current_capital:,.2f}")
+
+st.markdown(
+    "Manage your trades, view live market prices, and monitor capital and"
+    " performance."
+)
+st.markdown("---")
 
 # --- DASHBOARD SECTION: ADD NEW TRADE ---
 with st.expander("➕ Add New Trade", expanded=df.empty):
@@ -126,61 +184,10 @@ with st.expander("➕ Add New Trade", expanded=df.empty):
 st.markdown("---")
 
 if not df.empty:
-  # Calculations for live prices and profits
-  current_prices = []
-  current_values = []
-  profits = []
-  profit_pcts = []
-
-  for idx, row in df.iterrows():
-    t_ticker = row["Ticker"]
-    qty = float(row["Quantity"])
-    b_price = float(row["Buy Price"])
-    s_price = float(row["Sell Price"])
-    t_status = row["Status"]
-
-    if t_status == "Active":
-      c_price = fetch_current_price(t_ticker)
-      if c_price is None:
-        c_price = b_price
-      curr_val = qty * c_price
-      profit = (c_price - b_price) * qty
-      profit_pct = ((c_price - b_price) / b_price) * 100 if b_price > 0 else 0
-    else:
-      c_price = s_price
-      curr_val = qty * s_price
-      profit = (s_price - b_price) * qty
-      profit_pct = ((s_price - b_price) / b_price) * 100 if b_price > 0 else 0
-
-    current_prices.append(c_price)
-    current_values.append(curr_val)
-    profits.append(round(profit, 2))
-    profit_pcts.append(round(profit_pct, 2))
-
-  df["Current Price"] = current_prices
-  df["Current Value"] = current_values
-  df["Profit/Loss ($)"] = profits
-  df["Profit/Loss (%)"] = profit_pcts
-
-  # Summary Metrics Calculations
-  active_df = df[df["Status"] == "Active"]
-
-  # Starting Capital: Total cost basis of all trades entered (or active trades depending on preference; using all trades here as total capital deployed historically)
-  starting_capital = (df["Quantity"] * df["Buy Price"]).sum()
-  total_profit = df["Profit/Loss ($)"].sum()
-  current_capital = starting_capital + total_profit
-
-  # Render 5 metrics across the top dashboard row
-  m1, m2, m3, m4, m5 = st.columns(5)
+  # Additional secondary overview metrics
+  m1, m2, m3 = st.columns(3)
   m1.metric("Active Trades", len(active_df))
-  m2.metric("Starting Capital", f"${starting_capital:,.2f}")
-  m3.metric("Current Capital", f"${current_capital:,.2f}")
-  m4.metric(
-      "Total Profit / Loss",
-      f"${total_profit:,.2f}",
-      delta=f"${total_profit:,.2f}",
-  )
-  m5.metric(
+  m2.metric(
       "Active Market Value",
       (
           f"${active_df['Current Value'].sum():,.2f}"
@@ -188,12 +195,17 @@ if not df.empty:
           else "$0.00"
       ),
   )
+  m3.metric("Total Trades Recorded", len(df))
 
   st.markdown("---")
 
   # Main Dashboard Tabs
   tab1, tab2, tab3 = st.tabs(
-      ["📋 Trade Ledger & Live Prices", "📊 Analytics & Charts", "🗑️ Delete Trades"]
+      [
+          "📋 Trade Ledger & Live Prices",
+          "📊 Analytics & Capital Pie Charts",
+          "🗑️ Delete Trades",
+      ]
   )
 
   with tab1:
@@ -214,14 +226,36 @@ if not df.empty:
       st.plotly_chart(fig_bar, use_container_width=True)
 
     with col_b:
-      st.subheader("Active Asset Allocation")
-      if not active_df.empty:
-        fig_pie = px.pie(
-            active_df, names="Ticker", values="Current Value", hole=0.3
+      st.subheader("Capital vs. Profit Composition")
+      if starting_capital > 0:
+        pie_data = pd.DataFrame({
+            "Category": ["Starting Capital", "Net Profit / Loss"],
+            "Amount": [starting_capital, total_profit],
+        })
+        fig_pie_cap = px.pie(
+            pie_data,
+            names="Category",
+            values="Amount",
+            title="Capital Breakdown",
+            hole=0.3,
         )
-        st.plotly_chart(fig_pie, use_container_width=True)
+        st.plotly_chart(fig_pie_cap, use_container_width=True)
       else:
-        st.info("No active trades available for allocation chart.")
+        st.info("Insufficient data for capital composition pie chart.")
+
+    st.markdown("---")
+    st.subheader("Active Asset Allocation")
+    if not active_df.empty:
+      fig_pie_alloc = px.pie(
+          active_df,
+          names="Ticker",
+          values="Current Value",
+          title="Active Ticker Allocation",
+          hole=0.3,
+      )
+      st.plotly_chart(fig_pie_alloc, use_container_width=True)
+    else:
+      st.info("No active trades available for asset allocation chart.")
 
   with tab3:
     st.subheader("Manage / Delete Trades")
