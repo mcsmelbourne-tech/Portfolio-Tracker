@@ -369,14 +369,7 @@ def get_default_portfolio():
       [
           32,
           "2026-01-01",
-          "WIPRO.NS",
-          "India (INR)",
-          "Buy/Long",
-          62,
-          210.30,
-          166.83,
-          "Active",
-      ],
+      ]
   ]
   columns = [
       "ID",
@@ -498,7 +491,6 @@ if not df.empty:
       flag = "🇺🇸"
       curr_symbol = "$"
 
-    # If cancelled, investment value and P&L are treated as 0 (capital is freed up)
     if t_status == "Active":
       c_price = fetch_current_price(t_ticker)
       if c_price is None:
@@ -514,12 +506,18 @@ if not df.empty:
       global_invested += inv_val
       global_current_val += curr_val
       global_total_pl += pl
-    else:  # Cancelled or Closed
+    else:  # Cancelled
       c_price = s_price if s_price > 0 else b_price
-      inv_val = 0.0
-      curr_val = 0.0
-      pl = 0.0
-      pl_pct = 0.0
+      inv_val = qty * b_price  # Keep track of investment for capital return calculation
+      curr_val = qty * c_price
+      pl = (c_price - b_price) * qty if s_price > 0 else 0.0
+      pl_pct = (
+          ((c_price - b_price) / b_price) * 100
+          if b_price > 0 and s_price > 0
+          else 0.0
+      )
+      global_realised_pl += pl
+      global_total_pl += pl
 
     broker_display_rows.append({
         "ID": row["ID"],
@@ -528,7 +526,7 @@ if not df.empty:
         "Qty": qty,
         "Avg Price": f"{curr_symbol}{b_price:,.2f}",
         "LTP": f"{curr_symbol}{c_price:,.2f}",
-        "Status": t_status,  # Placed right after LTP
+        "Status": t_status,
         "Investment Value": f"{curr_symbol}{inv_val:,.2f}",
         "Current Value": f"{curr_symbol}{curr_val:,.2f}",
         "Total P&L": f"{curr_symbol}{pl:,.2f}",
@@ -551,11 +549,22 @@ if not df.empty:
       if not india_df.empty
       else 0.0
   )
+  # Remaining cash = Starting Capital - Active Investments + Cancelled/Realised returns & profits
+  india_cancelled_returns = (
+      india_df[india_df["Status"] == "Cancelled"]["Raw Inv"].sum()
+      + india_df[india_df["Status"] == "Cancelled"]["Raw P&L"].sum()
+      if not india_df.empty
+      else 0.0
+  )
   india_remaining_cap = max(
-      0.0, manual_caps.get("India (INR)", 0.0) - india_active_inv
+      0.0,
+      manual_caps.get("India (INR)", 0.0)
+      - india_active_inv
+      + india_cancelled_returns,
   )
   india_current = (
-      india_remaining_cap + india_df["Raw Curr"].sum()
+      india_remaining_cap
+      + india_df[india_df["Status"] == "Active"]["Raw Curr"].sum()
       if not india_df.empty
       else india_remaining_cap
   )
@@ -566,11 +575,21 @@ if not df.empty:
       if not usa_df.empty
       else 0.0
   )
+  usa_cancelled_returns = (
+      usa_df[usa_df["Status"] == "Cancelled"]["Raw Inv"].sum()
+      + usa_df[usa_df["Status"] == "Cancelled"]["Raw P&L"].sum()
+      if not usa_df.empty
+      else 0.0
+  )
   usa_remaining_cap = max(
-      0.0, manual_caps.get("USA (USD)", 0.0) - usa_active_inv
+      0.0,
+      manual_caps.get("USA (USD)", 0.0)
+      - usa_active_inv
+      + usa_cancelled_returns,
   )
   usa_current = (
-      usa_remaining_cap + usa_df["Raw Curr"].sum()
+      usa_remaining_cap
+      + usa_df[usa_df["Status"] == "Active"]["Raw Curr"].sum()
       if not usa_df.empty
       else usa_remaining_cap
   )
@@ -581,11 +600,21 @@ if not df.empty:
       if not cfd_df.empty
       else 0.0
   )
+  cfd_cancelled_returns = (
+      cfd_df[cfd_df["Status"] == "Cancelled"]["Raw Inv"].sum()
+      + cfd_df[cfd_df["Status"] == "Cancelled"]["Raw P&L"].sum()
+      if not cfd_df.empty
+      else 0.0
+  )
   cfd_remaining_cap = max(
-      0.0, manual_caps.get("CFD (AUD)", 0.0) - cfd_active_inv
+      0.0,
+      manual_caps.get("CFD (AUD)", 0.0)
+      - cfd_active_inv
+      + cfd_cancelled_returns,
   )
   cfd_current = (
-      cfd_remaining_cap + cfd_df["Raw Curr"].sum()
+      cfd_remaining_cap
+      + cfd_df[cfd_df["Status"] == "Active"]["Raw Curr"].sum()
       if not cfd_df.empty
       else cfd_remaining_cap
   )
@@ -706,7 +735,7 @@ for col, (m_title, curr, rem_c, profit_c, curr_c, m_df) in zip(
       st.metric(
           "Remaining Cash",
           f"{curr}{rem_c:,.2f}",
-          help="Starting Capital minus Active Investments",
+          help="Starting Capital minus Active Investments plus Cancelled Returns",
       )
       st.metric("Net Profit / Loss", f"{curr}{profit_c:,.2f}")
       st.metric("Total Market Value", f"{curr}{curr_c:,.2f}")
@@ -760,10 +789,6 @@ with st.expander("➕ Add New Trade / Import from File", expanded=df.empty):
 
       status = st.selectbox("Status", ["Active", "Cancelled"])
       sell_price = 0.0
-      if status == "Closed":
-        sell_price = st.number_input(
-            "Sell Price", min_value=0.0, value=105.0, step=0.1
-        )
 
       submitted = st.form_submit_button("Save Trade to Dashboard")
 
@@ -880,7 +905,6 @@ if not df.empty:
         " Changes'** when done!*"
     )
 
-    # Prepare dataframe for interactive editing with Status right after LTP
     editor_display_df = display_df[[
         "ID",
         "Symbol",
@@ -924,7 +948,6 @@ if not df.empty:
 
     if st.button("💾 Save Status Changes"):
       raw_df = load_data()
-      # Update status based on ID mapping from edited_table
       status_map = dict(zip(edited_table["ID"], edited_table["Status"]))
       raw_df["Status"] = raw_df["ID"].map(status_map).fillna(raw_df["Status"])
       save_data(raw_df)
