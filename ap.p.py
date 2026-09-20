@@ -15,7 +15,6 @@ DATA_FILE = "portfolio_trades.csv"
 def load_data():
   try:
     df = pd.read_csv(DATA_FILE)
-    # Ensure required columns exist
     expected_columns = [
         "ID",
         "Date",
@@ -31,7 +30,6 @@ def load_data():
         df[col] = []
     return df
   except (FileNotFoundError, pd.errors.EmptyDataError):
-    # Create default dataframe if file doesn't exist or is empty
     df = pd.DataFrame(
         columns=[
             "ID",
@@ -65,8 +63,8 @@ def fetch_current_price(ticker):
 
 st.title("📈 Stock Portfolio & Trade Tracker")
 st.markdown(
-    "Manage your trades, view live market prices, and analyze performance"
-    " directly on your dashboard."
+    "Manage your trades, view live market prices, and monitor capital and"
+    " performance."
 )
 
 df = load_data()
@@ -164,26 +162,31 @@ if not df.empty:
   df["Profit/Loss ($)"] = profits
   df["Profit/Loss (%)"] = profit_pcts
 
-  # Summary Metrics Dashboard
+  # Summary Metrics Calculations
   active_df = df[df["Status"] == "Active"]
-  total_invested = (
-      (active_df["Quantity"] * active_df["Buy Price"]).sum()
-      if not active_df.empty
-      else 0
-  )
-  total_current_val = (
-      active_df["Current Value"].sum() if not active_df.empty else 0
-  )
-  total_profit = df["Profit/Loss ($)"].sum()
 
-  m1, m2, m3, m4 = st.columns(4)
+  # Starting Capital: Total cost basis of all trades entered (or active trades depending on preference; using all trades here as total capital deployed historically)
+  starting_capital = (df["Quantity"] * df["Buy Price"]).sum()
+  total_profit = df["Profit/Loss ($)"].sum()
+  current_capital = starting_capital + total_profit
+
+  # Render 5 metrics across the top dashboard row
+  m1, m2, m3, m4, m5 = st.columns(5)
   m1.metric("Active Trades", len(active_df))
-  m2.metric("Total Invested", f"${total_invested:,.2f}")
-  m3.metric("Current Portfolio Value", f"${total_current_val:,.2f}")
+  m2.metric("Starting Capital", f"${starting_capital:,.2f}")
+  m3.metric("Current Capital", f"${current_capital:,.2f}")
   m4.metric(
       "Total Profit / Loss",
       f"${total_profit:,.2f}",
       delta=f"${total_profit:,.2f}",
+  )
+  m5.metric(
+      "Active Market Value",
+      (
+          f"${active_df['Current Value'].sum():,.2f}"
+          if not active_df.empty
+          else "$0.00"
+      ),
   )
 
   st.markdown("---")
