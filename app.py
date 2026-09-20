@@ -640,7 +640,7 @@ else:
     cfd_current = cfd_remaining_cap
 
 # --- HEADER SECTION ---
-st.title("📈 Stock Portfolio & Trade Tracker")
+st.title("📈 QuantFx - Stock Portfolio & Trade Tracker")
 st.markdown("---")
 
 # --- CAPITAL CONFIGURATION EXPANDER ---
