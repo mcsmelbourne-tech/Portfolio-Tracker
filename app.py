@@ -2,7 +2,6 @@ import datetime
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-import streamlit.components.v1 as components
 import yfinance as yf
 
 # Page configuration
@@ -1049,86 +1048,43 @@ if not df.empty:
         )
         st.plotly_chart(fig_bar, use_container_width=True)
 
-        # --- HOVER-TO-POPUP CHART PREVIEW COMPONENT ---
+        # --- POP-OUT WINDOW / MODAL DIALOG CHART INSPECTOR ---
         st.markdown("---")
-        st.subheader("🔍 Hover-to-Popup Stock Chart Previewer")
-        st.markdown("Move your mouse over any symbol card below to instantly pop up its live interactive chart preview:")
+        st.subheader("🔍 Pop-Out Chart Modal Inspector")
+        st.markdown("Click the button below for any active stock to open its chart in a dedicated pop-out modal window:")
 
         if not active_bar_df.empty:
-            # Build list of active symbols for the HTML hover component
-            tickers_list = []
-            for _, r in active_bar_df.iterrows():
-                sym = r["CleanTicker"]
-                # Format prefix for TradingView widget compatibility
-                if ".NS" in sym or ".BO" in sym:
-                    tv_sym = f"NSE:{sym.replace('.NS', '').replace('.BO', '')}"
-                elif ".AX" in sym:
-                    tv_sym = f"ASX:{sym.replace('.AX', '')}"
-                else:
-                    tv_sym = sym
-                tickers_list.append({"symbol": tv_sym, "display": r["Symbol"]})
+            # Define modal dialog function using st.dialog
+            @st.dialog("📈 Stock Chart Pop-Out Window", width="large")
+            def show_stock_modal(ticker_symbol):
+                st.subheader(f"Detailed Price History for: {ticker_symbol}")
+                tf = st.selectbox("Timeframe", ["1mo", "3mo", "6mo", "1y", "max"], index=2, key=f"modal_tf_{ticker_symbol}")
+                
+                with st.spinner("Fetching live chart data..."):
+                    try:
+                        hist_data = yf.Ticker(ticker_symbol).history(period=tf)
+                        if not hist_data.empty:
+                            fig_modal = px.line(
+                                hist_data, 
+                                x=hist_data.index, 
+                                y="Close", 
+                                title=f"{ticker_symbol} Closing Prices",
+                                labels={"x": "Date", "Close": "Price"}
+                            )
+                            fig_modal.update_layout(margin=dict(t=30, b=10, l=10, r=10), height=400)
+                            st.plotly_chart(fig_modal, use_container_width=True)
+                        else:
+                            st.warning(f"No data available for {ticker_symbol}.")
+                    except Exception as ex:
+                        st.error(f"Error loading chart: {ex}")
 
-            # Custom HTML/CSS/JS Component for Hover Popups
-            hover_html = """
-            <style>
-                .grid-container {
-                    display: flex;
-                    flex-wrap: wrap;
-                    gap: 12px;
-                    padding: 10px 0;
-                }
-                .stock-badge {
-                    position: relative;
-                    background: #1e222d;
-                    color: #ffffff;
-                    padding: 10px 16px;
-                    border-radius: 8px;
-                    font-weight: bold;
-                    cursor: pointer;
-                    border: 1px solid #2a2e39;
-                    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-                    transition: all 0.2s ease;
-                }
-                .stock-badge:hover {
-                    background: #2962ff;
-                    border-color: #2962ff;
-                }
-                .popup-card {
-                    display: none;
-                    position: absolute;
-                    bottom: 120%;
-                    left: 50%;
-                    transform: translateX(-50%);
-                    width: 320px;
-                    height: 240px;
-                    background: #131722;
-                    border: 1px solid #2a2e39;
-                    border-radius: 8px;
-                    box-shadow: 0 10px 25px rgba(0,0,0,0.6);
-                    z-index: 1000;
-                    overflow: hidden;
-                }
-                .stock-badge:hover .popup-card {
-                    display: block;
-                }
-            </style>
-            <div class="grid-container">
-            """
-            
-            for item in tickers_list:
-                hover_html += f"""
-                <div class="stock-badge">
-                    {item['display']}
-                    <div class="popup-card">
-                        <div class="tradingview-widget-container" style="height:100%;width:100%">
-                          <iframe scrolling="no" allowtransparency="true" frameborder="0" style="box-sizing: border-box; height: 100%; width: 100%;" src="https://s.tradingview.com/embed-widget/mini-symbol-overview/?locale=en#%7B%22symbol%22%3A%22{item['symbol']}%22%2C%22width%22%3A%22100%25%22%2C%22height%22%3A%22100%25%22%2C%22dateRange%22%3A%223M%22%2C%22colorTheme%22%3A%22dark%22%2C%22trendLineColor%22%3A%22%232962ff%22%2C%22underLineColor%22%3A%22rgba(41%2C%22%2C%22underLineBottomColor%22%3A%22rgba(41%2C%22%2C%22isTransparent%22%3Afalse%2C%22autosize%22%3Atrue%2C%22largeChartUrl%22%3A%22%22%7D"></iframe>
-                        </div>
-                    </div>
-                </div>
-                """
-            hover_html += "</div>"
-
-            components.html(hover_html, height=320)
+            # Render a grid of buttons for quick pop-out modals
+            cols_modal = st.columns(min(4, len(active_bar_df)))
+            for i, (_, row_item) in enumerate(active_bar_df.iterrows()):
+                col_target = cols_modal[i % len(cols_modal)]
+                with col_target:
+                    if st.button(f"🔍 Open {row_item['CleanTicker']}", key=f"btn_modal_{row_item['ID']}", use_container_width=True):
+                        show_stock_modal(row_item['CleanTicker'])
 
     with tab3:
         st.subheader("Manage / Delete Trades")
