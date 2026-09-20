@@ -13,37 +13,26 @@ DATA_FILE = "portfolio_trades.csv"
 
 
 def load_data():
+  expected_columns = [
+      "ID",
+      "Date",
+      "Ticker",
+      "Market",
+      "Type",
+      "Quantity",
+      "Buy Price",
+      "Sell Price",
+      "Status",
+  ]
   try:
     df = pd.read_csv(DATA_FILE)
-    expected_columns = [
-        "ID",
-        "Date",
-        "Ticker",
-        "Market",
-        "Type",
-        "Quantity",
-        "Buy Price",
-        "Sell Price",
-        "Status",
-    ]
+    # Check if any expected columns are missing and add them safely with default empty/null values
     for col in expected_columns:
       if col not in df.columns:
-        df[col] = []
+        df[col] = None
     return df
   except (FileNotFoundError, pd.errors.EmptyDataError):
-    df = pd.DataFrame(
-        columns=[
-            "ID",
-            "Date",
-            "Ticker",
-            "Market",
-            "Type",
-            "Quantity",
-            "Buy Price",
-            "Sell Price",
-            "Status",
-        ]
-    )
+    df = pd.DataFrame(columns=expected_columns)
     df.to_csv(DATA_FILE, index=False)
     return df
 
@@ -70,6 +59,10 @@ if not df.empty and "ID" in df.columns:
   df = df.sort_values(by="ID", ascending=False).reset_index(drop=True)
 
 # Calculations for live prices, profits, and market categorizations
+india_start = india_profit = india_current = 0.0
+usa_start = usa_profit = usa_current = 0.0
+cfd_start = cfd_profit = cfd_current = 0.0
+
 if not df.empty:
   current_prices = []
   current_values = []
@@ -79,11 +72,15 @@ if not df.empty:
   markets = []
 
   for idx, row in df.iterrows():
-    t_ticker = str(row["Ticker"]).upper()
-    qty = float(row["Quantity"])
-    b_price = float(row["Buy Price"])
-    s_price = float(row["Sell Price"])
-    t_status = row["Status"]
+    raw_ticker = str(row["Ticker"]).upper()
+    # Clean up ticker string if it already contains a flag emoji from previous saves
+    t_ticker = (
+        raw_ticker.split(" ")[-1] if " " in raw_ticker else raw_ticker
+    )
+    qty = float(row["Quantity"]) if pd.notna(row["Quantity"]) else 0.0
+    b_price = float(row["Buy Price"]) if pd.notna(row["Buy Price"]) else 0.0
+    s_price = float(row["Sell Price"]) if pd.notna(row["Sell Price"]) else 0.0
+    t_status = str(row["Status"])
 
     existing_market = (
         row["Market"] if "Market" in df.columns and pd.notna(row["Market"]) else ""
@@ -136,23 +133,20 @@ if not df.empty:
   usa_df = df[df["Market"] == "USA (USD)"]
   cfd_df = df[df["Market"] == "CFD (AUD)"]
 
-  india_start = (india_df["Quantity"] * india_df["Buy Price"]).sum()
-  india_profit = india_df["Profit/Loss ($)"].sum()
-  india_current = india_start + india_profit
+  if not india_df.empty:
+    india_start = (india_df["Quantity"] * india_df["Buy Price"]).sum()
+    india_profit = india_df["Profit/Loss ($)"].sum()
+    india_current = india_start + india_profit
 
-  usa_start = (usa_df["Quantity"] * usa_df["Buy Price"]).sum()
-  usa_profit = usa_df["Profit/Loss ($)"].sum()
-  usa_current = usa_start + usa_profit
+  if not usa_df.empty:
+    usa_start = (usa_df["Quantity"] * usa_df["Buy Price"]).sum()
+    usa_profit = usa_df["Profit/Loss ($)"].sum()
+    usa_current = usa_start + usa_profit
 
-  cfd_start = (cfd_df["Quantity"] * cfd_df["Buy Price"]).sum()
-  cfd_profit = cfd_df["Profit/Loss ($)"].sum()
-  cfd_current = cfd_start + cfd_profit
-else:
-  india_start = (
-      india_profit
-  ) = india_current = usa_start = usa_profit = usa_current = cfd_start = (
-      cfd_profit
-  ) = cfd_current = 0.0
+  if not cfd_df.empty:
+    cfd_start = (cfd_df["Quantity"] * cfd_df["Buy Price"]).sum()
+    cfd_profit = cfd_df["Profit/Loss ($)"].sum()
+    cfd_current = cfd_start + cfd_profit
 
 # --- HEADER SECTION ---
 st.title("📈 Stock Portfolio & Trade Tracker")
@@ -226,15 +220,19 @@ with st.expander("➕ Add New Trade", expanded=df.empty):
       if not ticker:
         st.error("Please enter a ticker symbol.")
       else:
+        # Load raw stored data to append correctly without duplicate flag labels
+        raw_df = load_data()
         new_id = (
-            int(df["ID"].max()) + 1
-            if not df.empty and "ID" in df.columns and pd.notna(df["ID"].max())
+            int(raw_df["ID"].max()) + 1
+            if not raw_df.empty
+            and "ID" in raw_df.columns
+            and pd.notna(raw_df["ID"].max())
             else 1
         )
         new_row = pd.DataFrame({
             "ID": [new_id],
             "Date": [str(trade_date)],
-            "Ticker": [ticker],
+            "Ticker": [ticker.strip().upper()],
             "Market": [market_selection],
             "Type": [trade_type],
             "Quantity": [quantity],
@@ -242,8 +240,8 @@ with st.expander("➕ Add New Trade", expanded=df.empty):
             "Sell Price": [sell_price if status == "Closed" else 0.0],
             "Status": [status],
         })
-        df = pd.concat([new_row, df], ignore_index=True)
-        save_data(df)
+        raw_df = pd.concat([new_row, raw_df], ignore_index=True)
+        save_data(raw_df)
         st.success(f"Trade for {ticker} added successfully!")
         st.rerun()
 
