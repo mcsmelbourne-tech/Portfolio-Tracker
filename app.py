@@ -9,7 +9,7 @@ st.set_page_config(
     page_title="Stock Portfolio & Trade Tracker", page_icon="📈", layout="wide"
 )
 
-# Custom CSS for slightly increased fonts and positive/negative colors
+# Custom CSS for compact metrics, fonts, and positive/negative colors
 st.markdown("""
     <style>
         h3 { font-size: 1.1rem !important; }
@@ -531,6 +531,7 @@ if not df.empty:
         broker_display_rows.append({
             "ID": row["ID"],
             "Symbol": f"{flag} {t_ticker}",
+            "CleanTicker": t_ticker,
             "Action": t_type,
             "Qty": qty,
             "Avg Price": f"{curr_symbol}{b_price:,.2f}",
@@ -837,8 +838,7 @@ with st.expander("➕ Add New Trade / Import from File", expanded=df.empty):
 
     with tab_excel:
         st.markdown(
-            "Upload your file (`.csv` or `.xlsx`) containing your trades. CSV files"
-            " work instantly without extra package dependencies!"
+            "Upload file (`.csv` or `.xlsx`) containing your trades."
         )
         uploaded_file = st.file_uploader(
             "Choose a file", type=["csv", "xlsx", "xls"]
@@ -896,10 +896,7 @@ with st.expander("➕ Add New Trade / Import from File", expanded=df.empty):
                     )
                     st.rerun()
             except Exception as e:
-                st.error(
-                    f"Error reading file: {e}. Tip: Save your Excel file as a **CSV**"
-                    " and upload that instead to avoid package issues!"
-                )
+                st.error(f"Error reading file: {e}")
 
 st.markdown("---")
 
@@ -1035,15 +1032,53 @@ if not df.empty:
 
         st.markdown("---")
         st.subheader("Overall Profit / Loss per Symbol")
+        
+        # Enhanced hover template showing detailed stats when mouse moves over stock bars
+        active_bar_df = display_df[display_df["Status"] == "Active"]
         fig_bar = px.bar(
-            display_df[display_df["Status"] == "Active"],
+            active_bar_df,
             x="Symbol",
             y="Raw P&L",
             color="Raw P&L",
             color_continuous_scale=["red", "green"],
             labels={"Raw P&L": "Profit/Loss ($)"},
+            hover_data=["Qty", "Investment Value", "Current Value", "Total P&L %"]
+        )
+        fig_bar.update_traces(
+            hovertemplate="<b>%{x}</b><br>Profit/Loss: $%{y:,.2f}<br>Quantity: %{customdata[0]}<br>Investment: %{customdata[1]}<br>Current Value: %{customdata[2]}<br>Return: %{customdata[3]}<extra></extra>"
         )
         st.plotly_chart(fig_bar, use_container_width=True)
+
+        # --- INTERACTIVE STOCK CHART PREVIEW VIEWER ---
+        st.markdown("---")
+        st.subheader("🔍 Stock Price Chart Inspector")
+        st.markdown("Select any active stock below to inspect its price history chart:")
+        
+        if not active_bar_df.empty:
+            selected_inspect_symbol = st.selectbox(
+                "Choose Stock to View Chart", 
+                active_bar_df["CleanTicker"].tolist()
+            )
+            timeframe = st.selectbox("Select Timeframe", ["1mo", "3mo", "6mo", "1y", "max"], index=2)
+            
+            if selected_inspect_symbol:
+                with st.spinner(f"Loading chart for {selected_inspect_symbol}..."):
+                    try:
+                        hist_data = yf.Ticker(selected_inspect_symbol).history(period=timeframe)
+                        if not hist_data.empty:
+                            fig_stock = px.line(
+                                hist_data, 
+                                x=hist_data.index, 
+                                y="Close", 
+                                title=f"{selected_inspect_symbol} - Price History ({timeframe})",
+                                labels={"x": "Date", "Close": "Closing Price"}
+                            )
+                            fig_stock.update_layout(margin=dict(t=30, b=10, l=10, r=10), height=350)
+                            st.plotly_chart(fig_stock, use_container_width=True)
+                        else:
+                            st.warning(f"No price history found for {selected_inspect_symbol}.")
+                    except Exception as e:
+                        st.error(f"Could not load chart: {e}")
 
     with tab3:
         st.subheader("Manage / Delete Trades")
