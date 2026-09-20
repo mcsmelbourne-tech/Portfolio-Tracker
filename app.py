@@ -369,7 +369,14 @@ def get_default_portfolio():
       [
           32,
           "2026-01-01",
-      ]
+          "WIPRO.NS",
+          "India (INR)",
+          "Buy/Long",
+          62,
+          210.30,
+          166.83,
+          "Active",
+      ],
   ]
   columns = [
       "ID",
@@ -508,7 +515,7 @@ if not df.empty:
       global_total_pl += pl
     else:  # Cancelled
       c_price = s_price if s_price > 0 else b_price
-      inv_val = qty * b_price  # Keep track of investment for capital return calculation
+      inv_val = qty * b_price
       curr_val = qty * c_price
       pl = (c_price - b_price) * qty if s_price > 0 else 0.0
       pl_pct = (
@@ -549,7 +556,6 @@ if not df.empty:
       if not india_df.empty
       else 0.0
   )
-  # Remaining cash = Starting Capital - Active Investments + Cancelled/Realised returns & profits
   india_cancelled_returns = (
       india_df[india_df["Status"] == "Cancelled"]["Raw Inv"].sum()
       + india_df[india_df["Status"] == "Cancelled"]["Raw P&L"].sum()
@@ -633,42 +639,45 @@ else:
 st.title("📈 Stock Portfolio & Trade Tracker")
 st.markdown("---")
 
-# --- CAPITAL CONFIGURATION EXPANDER ---
-with st.expander("⚙️ Set / Update Starting Capital for Markets"):
-  with st.form("capital_form"):
-    c_col1, c_col2, c_col3 = st.columns(3)
-    with c_col1:
-      new_ind_cap = st.number_input(
-          "🇮🇳 India Starting Capital (₹)",
-          min_value=0.0,
-          value=manual_caps.get("India (INR)", 0.0),
-          step=1000.0,
-      )
-    with c_col2:
-      new_usa_cap = st.number_input(
-          "🇺🇸 USA Starting Capital ($)",
-          min_value=0.0,
-          value=manual_caps.get("USA (USD)", 0.0),
-          step=100.0,
-      )
-    with c_col3:
-      new_cfd_cap = st.number_input(
-          "🇦🇺 CFD Starting Capital ($)",
-          min_value=0.0,
-          value=manual_caps.get("CFD (AUD)", 0.0),
-          step=100.0,
-      )
+# --- CAPITAL CONFIGURATION EXPANDER (Fixed without st.form to save instantly on click) ---
+with st.expander(
+    "⚙️ Set / Update Starting Capital for Markets", expanded=False
+):
+  c_col1, c_col2, c_col3 = st.columns(3)
+  with c_col1:
+    new_ind_cap = st.number_input(
+        "🇮🇳 India Starting Capital (₹)",
+        min_value=0.0,
+        value=manual_caps.get("India (INR)", 0.0),
+        step=1000.0,
+        key="input_ind_cap",
+    )
+  with c_col2:
+    new_usa_cap = st.number_input(
+        "🇺🇸 USA Starting Capital ($)",
+        min_value=0.0,
+        value=manual_caps.get("USA (USD)", 0.0),
+        step=100.0,
+        key="input_usa_cap",
+    )
+  with c_col3:
+    new_cfd_cap = st.number_input(
+        "🇦🇺 CFD Starting Capital ($)",
+        min_value=0.0,
+        value=manual_caps.get("CFD (AUD)", 0.0),
+        step=100.0,
+        key="input_cfd_cap",
+    )
 
-    cap_submitted = st.form_submit_button("Save Starting Capitals")
-    if cap_submitted:
-      updated_caps = {
-          "India (INR)": new_ind_cap,
-          "USA (USD)": new_usa_cap,
-          "CFD (AUD)": new_cfd_cap,
-      }
-      save_manual_capitals(updated_caps)
-      st.success("Starting capitals updated successfully!")
-      st.rerun()
+  if st.button("Save Starting Capitals"):
+    updated_caps = {
+        "India (INR)": new_ind_cap,
+        "USA (USD)": new_usa_cap,
+        "CFD (AUD)": new_cfd_cap,
+    }
+    save_manual_capitals(updated_caps)
+    st.success("Starting capitals saved permanently!")
+    st.rerun()
 
 # --- TOP BROKER SUMMARY BANNER ---
 if not df.empty:
