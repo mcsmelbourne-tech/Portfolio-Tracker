@@ -85,8 +85,6 @@ if not df.empty:
     s_price = float(row["Sell Price"])
     t_status = row["Status"]
 
-    # Determine market classification based on suffix or explicit column if present
-    # Default fallback check if Market column doesn't exist yet in old CSV rows
     existing_market = (
         row["Market"] if "Market" in df.columns and pd.notna(row["Market"]) else ""
     )
@@ -127,7 +125,7 @@ if not df.empty:
     profit_pcts.append(round(profit_pct, 2))
 
   df["Market"] = markets
-  df["Ticker & Flag"] = flags
+  df["Ticker"] = flags  # Displays flag directly with the ticker symbol
   df["Current Price"] = current_prices
   df["Current Value"] = current_values
   df["Profit/Loss ($)"] = profits
@@ -146,7 +144,7 @@ if not df.empty:
   usa_profit = usa_df["Profit/Loss ($)"].sum()
   usa_current = usa_start + usa_profit
 
-  cfd_start = (cfd_df["Quantity"] * cfd_df5 := cfd_df["Buy Price"]).sum()
+  cfd_start = (cfd_df["Quantity"] * cfd_df["Buy Price"]).sum()
   cfd_profit = cfd_df["Profit/Loss ($)"].sum()
   cfd_current = cfd_start + cfd_profit
 else:
@@ -263,8 +261,6 @@ if not df.empty:
 
   with tab1:
     st.subheader("Active & Closed Trades (Newest on Top)")
-    display_df = df.drop(columns=["Ticker & Flag"], errors="ignore")
-    # Reorder columns to display flag nicely if available
     st.dataframe(df, use_container_width=True)
 
   with tab2:
@@ -304,7 +300,6 @@ if not df.empty:
     )
     if st.button("Delete Selected Trade", type="primary"):
       df_stored = pd.read_csv(DATA_FILE)
-      df_stored = df_stored[df_stored["ID"] != trade_prev := "ID"]
       df_stored = df_stored[df_stored["ID"] != trade_to_delete]
       save_data(df_stored)
       st.success(f"Trade ID {trade_to_delete} deleted successfully!")
