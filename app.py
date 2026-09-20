@@ -749,7 +749,6 @@ for col, (m_title, curr, rem_c, profit_c, curr_c, m_df) in zip(
                 help="Starting Capital minus Active Investments plus Cancelled Returns",
             )
             
-            # Color Net Profit / Loss dynamically
             p_color_class = "profit-green" if profit_c >= 0 else "loss-red"
             st.markdown(f"**Net Profit / Loss**<br><span class='{p_color_class}' style='font-size:1.15rem;'>{curr}{profit_c:,.2f}</span>", unsafe_allow_html=True)
             
@@ -935,12 +934,11 @@ if not df.empty:
             "Raw P&L",
         ]].copy()
 
-        # Conditional styling function to highlight positive P&L as green and negative as red
         def color_pnl(val):
             color = '#00FF66' if val >= 0 else '#FF3333'
             return f'color: {color}'
 
-        styled_table = editor_display_df.style.applymap(
+        styled_table = editor_display_df.style.map(
             color_pnl, subset=["Total P&L", "Raw P&L"]
         ).format({"Raw P&L": "{:.2f}"})
 
@@ -954,7 +952,7 @@ if not df.empty:
                     required=True,
                 ),
                 "ID": st.column_config.NumberColumn("ID", disabled=True),
-                "Raw P&L": None, # Hide raw numeric column used for color logic
+                "Raw P&L": None,
             },
             disabled=[
                 "ID",
