@@ -6,7 +6,7 @@ import yfinance as yf
 
 # Page configuration
 st.set_page_config(
-    page_title="Stock Portfolio & Trade Tracker", page_icon="📈", layout="wide"
+    page_title="QuantFx -Stock Portfolio & Trade Tracker", page_icon="📈", layout="wide"
 )
 
 # Custom CSS for compact metrics, fonts, and positive/negative colors
