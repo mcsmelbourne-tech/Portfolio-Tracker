@@ -408,7 +408,7 @@ def load_data():
     df = pd.read_csv(DATA_FILE)
     for col in expected_columns:
       if col not in df.columns:
-        df[col] = None
+        df[col] = "Active" if col == "Status" else None
     if df.empty:
       df = get_default_portfolio()
       df.to_csv(DATA_FILE, index=False)
@@ -472,7 +472,9 @@ if not df.empty:
     qty = float(row["Quantity"]) if pd.notna(row["Quantity"]) else 0.0
     b_price = float(row["Buy Price"]) if pd.notna(row["Buy Price"]) else 0.0
     s_price = float(row["Sell Price"]) if pd.notna(row["Sell Price"]) else 0.0
-    t_status = str(row["Status"])
+    t_status = (
+        str(row["Status"]) if pd.notna(row["Status"]) else "Active"
+    )
     t_type = str(row["Type"])
 
     existing_market = (
@@ -496,6 +498,7 @@ if not df.empty:
       flag = "🇺🇸"
       curr_symbol = "$"
 
+    # If cancelled, investment value and P&L are treated as 0 (capital is freed up)
     if t_status == "Active":
       c_price = fetch_current_price(t_ticker)
       if c_price is None:
@@ -511,14 +514,12 @@ if not df.empty:
       global_invested += inv_val
       global_current_val += curr_val
       global_total_pl += pl
-    else:
-      c_price = s_price
-      inv_val = qty * b_price
-      curr_val = qty * s_price
-      pl = (s_price - b_price) * qty
-      pl_pct = ((s_price - b_price) / b_price) * 100 if b_price > 0 else 0
-      global_realised_pl += pl
-      global_total_pl += pl
+    else:  # Cancelled or Closed
+      c_price = s_price if s_price > 0 else b_price
+      inv_val = 0.0
+      curr_val = 0.0
+      pl = 0.0
+      pl_pct = 0.0
 
     broker_display_rows.append({
         "ID": row["ID"],
@@ -527,6 +528,7 @@ if not df.empty:
         "Qty": qty,
         "Avg Price": f"{curr_symbol}{b_price:,.2f}",
         "LTP": f"{curr_symbol}{c_price:,.2f}",
+        "Status": t_status,  # Placed right after LTP
         "Investment Value": f"{curr_symbol}{inv_val:,.2f}",
         "Current Value": f"{curr_symbol}{curr_val:,.2f}",
         "Total P&L": f"{curr_symbol}{pl:,.2f}",
@@ -535,7 +537,6 @@ if not df.empty:
         "Raw P&L": pl,
         "Raw Inv": inv_val,
         "Raw Curr": curr_val,
-        "Status": t_status,
     })
 
   display_df = pd.DataFrame(broker_display_rows)
@@ -757,7 +758,7 @@ with st.expander("➕ Add New Trade / Import from File", expanded=df.empty):
             "Buy Price", min_value=0.01, value=100.0, step=0.1
         )
 
-      status = st.selectbox("Status", ["Active", "Closed"])
+      status = st.selectbox("Status", ["Active", "Cancelled"])
       sell_price = 0.0
       if status == "Closed":
         sell_price = st.number_input(
@@ -786,7 +787,7 @@ with st.expander("➕ Add New Trade / Import from File", expanded=df.empty):
               "Type": [trade_type],
               "Quantity": [quantity],
               "Buy Price": [buy_price],
-              "Sell Price": [sell_price if status == "Closed" else 0.0],
+              "Sell Price": [sell_price],
               "Status": [status],
           })
           raw_df = pd.concat([new_row, raw_df], ignore_index=True)
@@ -872,38 +873,63 @@ if not df.empty:
   )
 
   with tab1:
-    st.subheader("📋 Active & Closed Broker Ledger")
+    st.subheader("📋 Active & Cancelled Broker Ledger")
+    st.markdown(
+        "💡 *Tip: You can change the **Status** column directly in the table"
+        " below between **Active** and **Cancelled**. Click **'Save Status"
+        " Changes'** when done!*"
+    )
 
-    def color_pl_pct(val):
-      try:
-        clean_val = float(
-            str(val).replace("%", "").replace(",", "").strip()
-        )
-        color = "green" if clean_val >= 0 else "red"
-        return f"color: {color}; font-weight: bold;"
-      except Exception:
-        return ""
-
-    cols_to_display = [
+    # Prepare dataframe for interactive editing with Status right after LTP
+    editor_display_df = display_df[[
         "ID",
         "Symbol",
         "Action",
         "Qty",
         "Avg Price",
         "LTP",
+        "Status",
         "Investment Value",
         "Current Value",
         "Total P&L",
         "Total P&L %",
-    ]
+    ]].copy()
 
-    target_df = display_df[cols_to_display]
-    if hasattr(target_df.style, "map"):
-      styled_df = target_df.style.map(color_pl_pct, subset=["Total P&L %"])
-    else:
-      styled_df = target_df.style.applymap(color_pl_pct, subset=["Total P&L %"])
+    edited_table = st.data_editor(
+        editor_display_df,
+        column_config={
+            "Status": st.column_config.SelectboxColumn(
+                "Status",
+                help="Select trade status",
+                options=["Active", "Cancelled"],
+                required=True,
+            ),
+            "ID": st.column_config.NumberColumn("ID", disabled=True),
+        },
+        disabled=[
+            "ID",
+            "Symbol",
+            "Action",
+            "Qty",
+            "Avg Price",
+            "LTP",
+            "Investment Value",
+            "Current Value",
+            "Total P&L",
+            "Total P&L %",
+        ],
+        hide_index=True,
+        use_container_width=True,
+    )
 
-    st.dataframe(styled_df, use_container_width=True)
+    if st.button("💾 Save Status Changes"):
+      raw_df = load_data()
+      # Update status based on ID mapping from edited_table
+      status_map = dict(zip(edited_table["ID"], edited_table["Status"]))
+      raw_df["Status"] = raw_df["ID"].map(status_map).fillna(raw_df["Status"])
+      save_data(raw_df)
+      st.success("Trade statuses updated successfully!")
+      st.rerun()
 
   with tab2:
     st.subheader("📊 Individual Market Breakdown Charts")
@@ -912,46 +938,49 @@ if not df.empty:
     with chart_col1:
       st.markdown("##### 🇮🇳 India Allocation")
       if not india_df.empty:
-        fig_ind = px.pie(
-            india_df[india_df["Status"] == "Active"],
-            names="Symbol",
-            values="Raw Curr",
-            hole=0.3,
-        )
-        st.plotly_chart(fig_ind, use_container_width=True)
+        active_ind = india_df[india_df["Status"] == "Active"]
+        if not active_ind.empty:
+          fig_ind = px.pie(
+              active_ind, names="Symbol", values="Raw Curr", hole=0.3
+          )
+          st.plotly_chart(fig_ind, use_container_width=True)
+        else:
+          st.info("No active India trades.")
       else:
         st.info("No India trades.")
 
     with chart_col2:
       st.markdown("##### 🇺🇸 USA Allocation")
       if not usa_df.empty:
-        fig_usa = px.pie(
-            usa_df[usa_df["Status"] == "Active"],
-            names="Symbol",
-            values="Raw Curr",
-            hole=0.3,
-        )
-        st.plotly_chart(fig_usa, use_container_width=True)
+        active_usa = usa_df[usa_df["Status"] == "Active"]
+        if not active_usa.empty:
+          fig_usa = px.pie(
+              active_usa, names="Symbol", values="Raw Curr", hole=0.3
+          )
+          st.plotly_chart(fig_usa, use_container_width=True)
+        else:
+          st.info("No active USA trades.")
       else:
         st.info("No USA trades.")
 
     with chart_col3:
       st.markdown("##### 🇦🇺 CFD Allocation")
       if not cfd_df.empty:
-        fig_cfd = px.pie(
-            cfd_df[cfd_df["Status"] == "Active"],
-            names="Symbol",
-            values="Raw Curr",
-            hole=0.3,
-        )
-        st.plotly_chart(fig_cfd, use_container_width=True)
+        active_cfd = cfd_df[cfd_df["Status"] == "Active"]
+        if not active_cfd.empty:
+          fig_cfd = px.pie(
+              active_cfd, names="Symbol", values="Raw Curr", hole=0.3
+          )
+          st.plotly_chart(fig_cfd, use_container_width=True)
+        else:
+          st.info("No active CFD trades.")
       else:
         st.info("No CFD trades.")
 
     st.markdown("---")
     st.subheader("Overall Profit / Loss per Symbol")
     fig_bar = px.bar(
-        display_df,
+        display_df[display_df["Status"] == "Active"],
         x="Symbol",
         y="Raw P&L",
         color="Raw P&L",
