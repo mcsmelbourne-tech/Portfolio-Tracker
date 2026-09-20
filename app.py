@@ -1033,7 +1033,6 @@ if not df.empty:
         st.markdown("---")
         st.subheader("Overall Profit / Loss per Symbol")
         
-        # Enhanced hover template showing detailed stats when mouse moves over stock bars
         active_bar_df = display_df[display_df["Status"] == "Active"]
         fig_bar = px.bar(
             active_bar_df,
@@ -1049,36 +1048,43 @@ if not df.empty:
         )
         st.plotly_chart(fig_bar, use_container_width=True)
 
-        # --- INTERACTIVE STOCK CHART PREVIEW VIEWER ---
+        # --- POP-OUT WINDOW / MODAL DIALOG CHART INSPECTOR ---
         st.markdown("---")
-        st.subheader("🔍 Stock Price Chart Inspector")
-        st.markdown("Select any active stock below to inspect its price history chart:")
-        
+        st.subheader("🔍 Pop-Out Chart Modal Inspector")
+        st.markdown("Click the button below for any active stock to open its chart in a dedicated pop-out modal window:")
+
         if not active_bar_df.empty:
-            selected_inspect_symbol = st.selectbox(
-                "Choose Stock to View Chart", 
-                active_bar_df["CleanTicker"].tolist()
-            )
-            timeframe = st.selectbox("Select Timeframe", ["1mo", "3mo", "6mo", "1y", "max"], index=2)
-            
-            if selected_inspect_symbol:
-                with st.spinner(f"Loading chart for {selected_inspect_symbol}..."):
+            # Define modal dialog function using st.dialog
+            @st.dialog("📈 Stock Chart Pop-Out Window", width="large")
+            def show_stock_modal(ticker_symbol):
+                st.subheader(f"Detailed Price History for: {ticker_symbol}")
+                tf = st.selectbox("Timeframe", ["1mo", "3mo", "6mo", "1y", "max"], index=2, key=f"modal_tf_{ticker_symbol}")
+                
+                with st.spinner("Fetching live chart data..."):
                     try:
-                        hist_data = yf.Ticker(selected_inspect_symbol).history(period=timeframe)
+                        hist_data = yf.Ticker(ticker_symbol).history(period=tf)
                         if not hist_data.empty:
-                            fig_stock = px.line(
+                            fig_modal = px.line(
                                 hist_data, 
                                 x=hist_data.index, 
                                 y="Close", 
-                                title=f"{selected_inspect_symbol} - Price History ({timeframe})",
-                                labels={"x": "Date", "Close": "Closing Price"}
+                                title=f"{ticker_symbol} Closing Prices",
+                                labels={"x": "Date", "Close": "Price"}
                             )
-                            fig_stock.update_layout(margin=dict(t=30, b=10, l=10, r=10), height=350)
-                            st.plotly_chart(fig_stock, use_container_width=True)
+                            fig_modal.update_layout(margin=dict(t=30, b=10, l=10, r=10), height=400)
+                            st.plotly_chart(fig_modal, use_container_width=True)
                         else:
-                            st.warning(f"No price history found for {selected_inspect_symbol}.")
-                    except Exception as e:
-                        st.error(f"Could not load chart: {e}")
+                            st.warning(f"No data available for {ticker_symbol}.")
+                    except Exception as ex:
+                        st.error(f"Error loading chart: {ex}")
+
+            # Render a grid of buttons for quick pop-out modals
+            cols_modal = st.columns(min(4, len(active_bar_df)))
+            for i, (_, row_item) in enumerate(active_bar_df.iterrows()):
+                col_target = cols_modal[i % len(cols_modal)]
+                with col_target:
+                    if st.button(f"🔍 Open {row_item['CleanTicker']}", key=f"btn_modal_{row_item['ID']}", use_container_width=True):
+                        show_stock_modal(row_item['CleanTicker'])
 
     with tab3:
         st.subheader("Manage / Delete Trades")
