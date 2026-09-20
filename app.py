@@ -935,7 +935,15 @@ if not df.empty:
         ]].copy()
 
         def color_pnl(val):
-            color = '#00FF66' if val >= 0 else '#FF3333'
+            if isinstance(val, (int, float)):
+                num = val
+            else:
+                cleaned = str(val).replace('$', '').replace('₹', '').replace(',', '').strip()
+                try:
+                    num = float(cleaned)
+                except ValueError:
+                    num = 0.0
+            color = '#00FF66' if num >= 0 else '#FF3333'
             return f'color: {color}'
 
         styled_table = editor_display_df.style.map(
