@@ -535,6 +535,7 @@ if not df.empty:
         "Raw P&L": pl,
         "Raw Inv": inv_val,
         "Raw Curr": curr_val,
+        "Status": t_status,
     })
 
   display_df = pd.DataFrame(broker_display_rows)
@@ -544,33 +545,59 @@ if not df.empty:
   cfd_df = display_df[display_df["Market"] == "CFD (AUD)"]
 
   india_profit = india_df["Raw P&L"].sum() if not india_df.empty else 0.0
-  india_current = (
-      manual_caps.get("India (INR)", 0.0)
-      + india_df["Raw Curr"].sum()
+  india_active_inv = (
+      india_df[india_df["Status"] == "Active"]["Raw Inv"].sum()
       if not india_df.empty
-      else manual_caps.get("India (INR)", 0.0)
+      else 0.0
+  )
+  india_remaining_cap = max(
+      0.0, manual_caps.get("India (INR)", 0.0) - india_active_inv
+  )
+  india_current = (
+      india_remaining_cap + india_df["Raw Curr"].sum()
+      if not india_df.empty
+      else india_remaining_cap
   )
 
   usa_profit = usa_df["Raw P&L"].sum() if not usa_df.empty else 0.0
-  usa_current = (
-      manual_caps.get("USA (USD)", 0.0) + usa_df["Raw Curr"].sum()
+  usa_active_inv = (
+      usa_df[usa_df["Status"] == "Active"]["Raw Inv"].sum()
       if not usa_df.empty
-      else manual_caps.get("USA (USD)", 0.0)
+      else 0.0
+  )
+  usa_remaining_cap = max(
+      0.0, manual_caps.get("USA (USD)", 0.0) - usa_active_inv
+  )
+  usa_current = (
+      usa_remaining_cap + usa_df["Raw Curr"].sum()
+      if not usa_df.empty
+      else usa_remaining_cap
   )
 
   cfd_profit = cfd_df["Raw P&L"].sum() if not cfd_df.empty else 0.0
-  cfd_current = (
-      manual_caps.get("CFD (AUD)", 0.0) + cfd_df["Raw Curr"].sum()
+  cfd_active_inv = (
+      cfd_df[cfd_df["Status"] == "Active"]["Raw Inv"].sum()
       if not cfd_df.empty
-      else manual_caps.get("CFD (AUD)", 0.0)
+      else 0.0
+  )
+  cfd_remaining_cap = max(
+      0.0, manual_caps.get("CFD (AUD)", 0.0) - cfd_active_inv
+  )
+  cfd_current = (
+      cfd_remaining_cap + cfd_df["Raw Curr"].sum()
+      if not cfd_df.empty
+      else cfd_remaining_cap
   )
 else:
   display_df = pd.DataFrame()
   india_df = usa_df = cfd_df = pd.DataFrame()
   india_profit = usa_profit = cfd_profit = 0.0
-  india_current = manual_caps.get("India (INR)", 0.0)
-  usa_current = manual_caps.get("USA (USD)", 0.0)
-  cfd_current = manual_caps.get("CFD (AUD)", 0.0)
+  india_remaining_cap = manual_caps.get("India (INR)", 0.0)
+  usa_remaining_cap = manual_caps.get("USA (USD)", 0.0)
+  cfd_remaining_cap = manual_caps.get("CFD (AUD)", 0.0)
+  india_current = india_remaining_cap
+  usa_current = usa_remaining_cap
+  cfd_current = cfd_remaining_cap
 
 # --- HEADER SECTION ---
 st.title("📈 Stock Portfolio & Trade Tracker")
@@ -644,7 +671,7 @@ markets_data = [
     (
         "🇮🇳 India Market",
         "₹",
-        manual_caps.get("India (INR)", 0.0),
+        india_remaining_cap,
         india_profit,
         india_current,
         india_df,
@@ -652,7 +679,7 @@ markets_data = [
     (
         "🇺🇸 USA Market",
         "$",
-        manual_caps.get("USA (USD)", 0.0),
+        usa_remaining_cap,
         usa_profit,
         usa_current,
         usa_df,
@@ -660,14 +687,14 @@ markets_data = [
     (
         "🇦🇺 CFD Market (Australia)",
         "$",
-        manual_caps.get("CFD (AUD)", 0.0),
+        cfd_remaining_cap,
         cfd_profit,
         cfd_current,
         cfd_df,
     ),
 ]
 
-for col, (m_title, curr, start_c, profit_c, curr_c, m_df) in zip(
+for col, (m_title, curr, rem_c, profit_c, curr_c, m_df) in zip(
     market_cols, markets_data
 ):
   with col:
@@ -675,27 +702,31 @@ for col, (m_title, curr, start_c, profit_c, curr_c, m_df) in zip(
     sub_col1, sub_col2 = st.columns([1.2, 0.8])
 
     with sub_col1:
-      st.metric("Starting Capital", f"{curr}{start_c:,.2f}")
       st.metric(
-          "Net Profit / Loss",
-          f"{curr}{profit_c:,.2f}",
-          delta=f"{curr}{profit_c:,.2f}",
+          "Remaining Cash",
+          f"{curr}{rem_c:,.2f}",
+          help="Starting Capital minus Active Investments",
       )
-      st.metric("Current Capital", f"{curr}{curr_c:,.2f}")
+      st.metric("Net Profit / Loss", f"{curr}{profit_c:,.2f}")
+      st.metric("Total Market Value", f"{curr}{curr_c:,.2f}")
 
     with sub_col2:
       if not m_df.empty:
-        fig_mini = px.pie(
-            m_df, names="Symbol", values="Raw Curr", hole=0.4
-        )
-        fig_mini.update_layout(
-            showlegend=False,
-            margin=dict(t=10, b=10, l=10, r=10),
-            height=140,
-        )
-        st.plotly_chart(
-            fig_mini, use_container_width=True, config={"displayModeBar": False}
-        )
+        active_m_df = m_df[m_df["Status"] == "Active"]
+        if not active_m_df.empty:
+          fig_mini = px.pie(
+              active_m_df, names="Symbol", values="Raw Curr", hole=0.4
+          )
+          fig_mini.update_layout(
+              showlegend=False,
+              margin=dict(t=10, b=10, l=10, r=10),
+              height=140,
+          )
+          st.plotly_chart(
+              fig_mini, use_container_width=True, config={"displayModeBar": False}
+          )
+        else:
+          st.caption("No active trades")
       else:
         st.caption("No allocation")
 
@@ -882,7 +913,10 @@ if not df.empty:
       st.markdown("##### 🇮🇳 India Allocation")
       if not india_df.empty:
         fig_ind = px.pie(
-            india_df, names="Symbol", values="Raw Curr", hole=0.3
+            india_df[india_df["Status"] == "Active"],
+            names="Symbol",
+            values="Raw Curr",
+            hole=0.3,
         )
         st.plotly_chart(fig_ind, use_container_width=True)
       else:
@@ -891,7 +925,12 @@ if not df.empty:
     with chart_col2:
       st.markdown("##### 🇺🇸 USA Allocation")
       if not usa_df.empty:
-        fig_usa = px.pie(usa_df, names="Symbol", values="Raw Curr", hole=0.3)
+        fig_usa = px.pie(
+            usa_df[usa_df["Status"] == "Active"],
+            names="Symbol",
+            values="Raw Curr",
+            hole=0.3,
+        )
         st.plotly_chart(fig_usa, use_container_width=True)
       else:
         st.info("No USA trades.")
@@ -899,7 +938,12 @@ if not df.empty:
     with chart_col3:
       st.markdown("##### 🇦🇺 CFD Allocation")
       if not cfd_df.empty:
-        fig_cfd = px.pie(cfd_df, names="Symbol", values="Raw Curr", hole=0.3)
+        fig_cfd = px.pie(
+            cfd_df[cfd_df["Status"] == "Active"],
+            names="Symbol",
+            values="Raw Curr",
+            hole=0.3,
+        )
         st.plotly_chart(fig_cfd, use_container_width=True)
       else:
         st.info("No CFD trades.")
