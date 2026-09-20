@@ -88,7 +88,7 @@ if not df.empty and "ID" in df.columns:
 
 global_invested = 0.0
 global_current_val = 0.0
-global_unrealised_pl = 0.0
+global_total_pl = 0.0
 global_realised_pl = 0.0
 
 broker_display_rows = []
@@ -134,7 +134,7 @@ if not df.empty:
       pl_pct = ((c_price - b_price) / b_price) * 100 if b_price > 0 else 0
       global_invested += inv_val
       global_current_val += curr_val
-      global_unrealised_pl += pl
+      global_total_pl += pl
     else:
       c_price = s_price
       inv_val = qty * b_price
@@ -142,6 +142,7 @@ if not df.empty:
       pl = (s_price - b_price) * qty
       pl_pct = ((s_price - b_price) / b_price) * 100 if b_price > 0 else 0
       global_realised_pl += pl
+      global_total_pl += pl
 
     broker_display_rows.append({
         "ID": row["ID"],
@@ -152,8 +153,8 @@ if not df.empty:
         "LTP": f"{curr_symbol}{c_price:,.2f}",
         "Investment Value": f"{curr_symbol}{inv_val:,.2f}",
         "Current Value": f"{curr_symbol}{curr_val:,.2f}",
-        "Unrealised P&L": f"{curr_symbol}{pl:,.2f}",
-        "Unrealised P&L %": f"{pl_pct:,.2f}%",
+        "Total P&L": f"{curr_symbol}{pl:,.2f}",
+        "Total P&L %": f"{pl_pct:,.2f}%",
         "Market": market,
         "Raw P&L": pl,
         "Raw Inv": inv_val,
@@ -244,15 +245,15 @@ if not df.empty:
   with col_s2:
     st.metric("Current Value", f"${global_current_val:,.2f}")
   with col_s3:
-    unreal_pct = (
-        (global_unrealised_pl / global_invested) * 100
+    total_pct = (
+        (global_total_pl / global_invested) * 100
         if global_invested > 0
         else 0
     )
     st.metric(
-        "Unrealised P&L",
-        f"${global_unrealised_pl:,.2f}",
-        delta=f"{unreal_pct:.2f}%",
+        "Total P&L",
+        f"${global_total_pl:,.2f}",
+        delta=f"{total_pct:.2f}%",
     )
   with col_s4:
     st.metric("Realised P&L", f"${global_realised_pl:,.2f}")
@@ -408,7 +409,6 @@ with st.expander("➕ Add New Trade / Import from Excel", expanded=df.empty):
               else 1
           )
 
-          # Normalize / map columns if needed
           expected_cols = [
               "Date",
               "Ticker",
@@ -434,9 +434,7 @@ with st.expander("➕ Add New Trade / Import from Excel", expanded=df.empty):
                 "ID": curr_id,
                 "Date": str(row.get("Date", datetime.date.today())),
                 "Ticker": str(row.get("Ticker", "")).strip().upper(),
-                "Market": str(
-                    row.get("Market", "USA (USD)")
-                ),  # default fallback
+                "Market": str(row.get("Market", "USA (USD)")),
                 "Type": str(row.get("Type", "Buy/Long")),
                 "Quantity": float(row.get("Quantity", 1.0)),
                 "Buy Price": float(row.get("Buy Price", 0.0)),
@@ -477,8 +475,8 @@ if not df.empty:
         "LTP",
         "Investment Value",
         "Current Value",
-        "Unrealised P&L",
-        "Unrealised P&L %",
+        "Total P&L",
+        "Total P&L %",
     ]
     st.dataframe(display_df[cols_to_display], use_container_width=True)
 
