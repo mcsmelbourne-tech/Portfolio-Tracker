@@ -19,6 +19,7 @@ def load_data():
         "ID",
         "Date",
         "Ticker",
+        "Market",
         "Type",
         "Quantity",
         "Buy Price",
@@ -35,6 +36,7 @@ def load_data():
             "ID",
             "Date",
             "Ticker",
+            "Market",
             "Type",
             "Quantity",
             "Buy Price",
@@ -67,24 +69,44 @@ df = load_data()
 if not df.empty and "ID" in df.columns:
   df = df.sort_values(by="ID", ascending=False).reset_index(drop=True)
 
-# Calculations for live prices and profits if df is not empty
-starting_capital = 0.0
-total_profit = 0.0
-current_capital = 0.0
-active_df = pd.DataFrame()
-
+# Calculations for live prices, profits, and market categorizations
 if not df.empty:
   current_prices = []
   current_values = []
   profits = []
   profit_pcts = []
+  flags = []
+  markets = []
 
   for idx, row in df.iterrows():
-    t_ticker = row["Ticker"]
+    t_ticker = str(row["Ticker"]).upper()
     qty = float(row["Quantity"])
     b_price = float(row["Buy Price"])
     s_price = float(row["Sell Price"])
     t_status = row["Status"]
+
+    # Determine market classification based on suffix or explicit column if present
+    # Default fallback check if Market column doesn't exist yet in old CSV rows
+    existing_market = (
+        row["Market"] if "Market" in df.columns and pd.notna(row["Market"]) else ""
+    )
+
+    if (
+        "NS" in t_ticker
+        or "BO" in t_ticker
+        or existing_market == "India (INR)"
+    ):
+      market = "India (INR)"
+      flag = "🇮🇳"
+    elif ".AX" in t_ticker or existing_market == "CFD (AUD)":
+      market = "CFD (AUD)"
+      flag = "🇦🇺"
+    else:
+      market = "USA (USD)"
+      flag = "🇺🇸"
+
+    markets.append(market)
+    flags.append(f"{flag} {t_ticker}")
 
     if t_status == "Active":
       c_price = fetch_current_price(t_ticker)
@@ -104,31 +126,73 @@ if not df.empty:
     profits.append(round(profit, 2))
     profit_pcts.append(round(profit_pct, 2))
 
+  df["Market"] = markets
+  df["Ticker & Flag"] = flags
   df["Current Price"] = current_prices
   df["Current Value"] = current_values
   df["Profit/Loss ($)"] = profits
   df["Profit/Loss (%)"] = profit_pcts
 
-  active_df = df[df["Status"] == "Active"]
-  starting_capital = (df["Quantity"] * df["Buy Price"]).sum()
-  total_profit = df["Profit/Loss ($)"].sum()
-  current_capital = starting_capital + total_profit
+  # Calculate segregated metrics
+  india_df = df[df["Market"] == "India (INR)"]
+  usa_df = df[df["Market"] == "USA (USD)"]
+  cfd_df = df[df["Market"] == "CFD (AUD)"]
 
-# --- HEADER SECTION WITH CAPITAL METRICS RIGHT NEXT TO TITLE ---
-head_col1, head_col2, head_col3, head_col4 = st.columns([2, 1, 1, 1])
-with head_col1:
-  st.title("📈 Stock Portfolio & Trade Tracker")
-with head_col2:
-  st.metric("Starting Capital", f"${starting_capital:,.2f}")
-with head_col3:
-  st.metric("Total Profit", f"${total_profit:,.2f}", delta=f"${total_profit:,.2f}")
-with head_col4:
-  st.metric("Current Capital", f"${current_capital:,.2f}")
+  india_start = (india_df["Quantity"] * india_df["Buy Price"]).sum()
+  india_profit = india_df["Profit/Loss ($)"].sum()
+  india_current = india_start + india_profit
 
+  usa_start = (usa_df["Quantity"] * usa_df["Buy Price"]).sum()
+  usa_profit = usa_df["Profit/Loss ($)"].sum()
+  usa_current = usa_start + usa_profit
+
+  cfd_start = (cfd_df["Quantity"] * cfd_df5 := cfd_df["Buy Price"]).sum()
+  cfd_profit = cfd_df["Profit/Loss ($)"].sum()
+  cfd_current = cfd_start + cfd_profit
+else:
+  india_start = (
+      india_profit
+  ) = india_current = usa_start = usa_profit = usa_current = cfd_start = (
+      cfd_profit
+  ) = cfd_current = 0.0
+
+# --- HEADER SECTION ---
+st.title("📈 Stock Portfolio & Trade Tracker")
 st.markdown(
-    "Manage your trades, view live market prices, and monitor capital and"
-    " performance."
+    "Multi-market tracker partitioned by USA, India, and Australian CFD assets."
 )
+st.markdown("---")
+
+# --- SEGREGATED CAPITAL METRICS DISPLAY ---
+st.subheader("🌍 Regional Capital & Profit Overview")
+col_ind, col_usa, col_cfd = st.columns(3)
+
+with col_ind:
+  st.markdown("### 🇮🇳 India Market")
+  st.metric("Starting Capital", f"₹{india_start:,.2f}")
+  st.metric(
+      "Net Profit / Loss",
+      f"₹{india_profit:,.2f}",
+      delta=f"₹{india_profit:,.2f}",
+  )
+  st.metric("Current Capital", f"₹{india_current:,.2f}")
+
+with col_usa:
+  st.markdown("### 🇺🇸 USA Market")
+  st.metric("Starting Capital", f"${usa_start:,.2f}")
+  st.metric(
+      "Net Profit / Loss", f"${usa_profit:,.2f}", delta=f"${usa_profit:,.2f}"
+  )
+  st.metric("Current Capital", f"${usa_current:,.2f}")
+
+with col_cfd:
+  st.markdown("### 🇦🇺 CFD Market (Australia)")
+  st.metric("Starting Capital", f"${cfd_start:,.2f}")
+  st.metric(
+      "Net Profit / Loss", f"${cfd_profit:,.2f}", delta=f"${cfd_profit:,.2f}"
+  )
+  st.metric("Current Capital", f"${cfd_current:,.2f}")
+
 st.markdown("---")
 
 # --- DASHBOARD SECTION: ADD NEW TRADE ---
@@ -138,21 +202,24 @@ with st.expander("➕ Add New Trade", expanded=df.empty):
     with col1:
       trade_date = st.date_input("Trade Date", datetime.date.today())
       ticker = st.text_input(
-          "Ticker Symbol (e.g., AAPL, TSLA, BHP.AX)", ""
+          "Ticker Symbol (e.g., AAPL, RELIANCE.NS, BHP.AX)", ""
       ).upper()
     with col2:
-      trade_type = st.selectbox("Type", ["Buy/Long", "Sell/Short"])
-      quantity = st.number_input("Quantity", min_value=0.01, value=10.0, step=1.0)
-    with col3:
-      buy_price = st.number_input(
-          "Buy Price ($)", min_value=0.01, value=100.0, step=0.1
+      market_selection = st.selectbox(
+          "Market / Currency Group", ["USA (USD)", "India (INR)", "CFD (AUD)"]
       )
-      status = st.selectbox("Status", ["Active", "Closed"])
+      trade_type = st.selectbox("Type", ["Buy/Long", "Sell/Short"])
+    with col3:
+      quantity = st.number_input("Quantity", min_value=0.01, value=10.0, step=1.0)
+      buy_price = st.number_input(
+          "Buy Price", min_value=0.01, value=100.0, step=0.1
+      )
 
+    status = st.selectbox("Status", ["Active", "Closed"])
     sell_price = 0.0
     if status == "Closed":
       sell_price = st.number_input(
-          "Sell Price ($)", min_value=0.0, value=105.0, step=0.1
+          "Sell Price", min_value=0.0, value=105.0, step=0.1
       )
 
     submitted = st.form_submit_button("Save Trade to Dashboard")
@@ -170,6 +237,7 @@ with st.expander("➕ Add New Trade", expanded=df.empty):
             "ID": [new_id],
             "Date": [str(trade_date)],
             "Ticker": [ticker],
+            "Market": [market_selection],
             "Type": [trade_type],
             "Quantity": [quantity],
             "Buy Price": [buy_price],
@@ -184,32 +252,19 @@ with st.expander("➕ Add New Trade", expanded=df.empty):
 st.markdown("---")
 
 if not df.empty:
-  # Additional secondary overview metrics
-  m1, m2, m3 = st.columns(3)
-  m1.metric("Active Trades", len(active_df))
-  m2.metric(
-      "Active Market Value",
-      (
-          f"${active_df['Current Value'].sum():,.2f}"
-          if not active_df.empty
-          else "$0.00"
-      ),
-  )
-  m3.metric("Total Trades Recorded", len(df))
-
-  st.markdown("---")
-
   # Main Dashboard Tabs
   tab1, tab2, tab3 = st.tabs(
       [
           "📋 Trade Ledger & Live Prices",
-          "📊 Analytics & Capital Pie Charts",
+          "📊 Regional Analytics & Charts",
           "🗑️ Delete Trades",
       ]
   )
 
   with tab1:
     st.subheader("Active & Closed Trades (Newest on Top)")
+    display_df = df.drop(columns=["Ticker & Flag"], errors="ignore")
+    # Reorder columns to display flag nicely if available
     st.dataframe(df, use_container_width=True)
 
   with tab2:
@@ -226,36 +281,21 @@ if not df.empty:
       st.plotly_chart(fig_bar, use_container_width=True)
 
     with col_b:
-      st.subheader("Capital vs. Profit Composition")
-      if starting_capital > 0:
-        pie_data = pd.DataFrame({
-            "Category": ["Starting Capital", "Net Profit / Loss"],
-            "Amount": [starting_capital, total_profit],
-        })
-        fig_pie_cap = px.pie(
-            pie_data,
-            names="Category",
-            values="Amount",
-            title="Capital Breakdown",
+      st.subheader("Capital Distribution by Market")
+      market_alloc = (
+          df.groupby("Market")["Current Value"].sum().reset_index()
+      )
+      if not market_alloc.empty:
+        fig_pie_market = px.pie(
+            market_alloc,
+            names="Market",
+            values="Current Value",
+            title="Portfolio Split Across Regions",
             hole=0.3,
         )
-        st.plotly_chart(fig_pie_cap, use_container_width=True)
+        st.plotly_chart(fig_pie_market, use_container_width=True)
       else:
-        st.info("Insufficient data for capital composition pie chart.")
-
-    st.markdown("---")
-    st.subheader("Active Asset Allocation")
-    if not active_df.empty:
-      fig_pie_alloc = px.pie(
-          active_df,
-          names="Ticker",
-          values="Current Value",
-          title="Active Ticker Allocation",
-          hole=0.3,
-      )
-      st.plotly_chart(fig_pie_alloc, use_container_width=True)
-    else:
-      st.info("No active trades available for asset allocation chart.")
+        st.info("No market valuation data available for pie chart.")
 
   with tab3:
     st.subheader("Manage / Delete Trades")
@@ -264,6 +304,7 @@ if not df.empty:
     )
     if st.button("Delete Selected Trade", type="primary"):
       df_stored = pd.read_csv(DATA_FILE)
+      df_stored = df_stored[df_stored["ID"] != trade_prev := "ID"]
       df_stored = df_stored[df_stored["ID"] != trade_to_delete]
       save_data(df_stored)
       st.success(f"Trade ID {trade_to_delete} deleted successfully!")
@@ -272,5 +313,5 @@ if not df.empty:
 else:
   st.info(
       "No trades recorded yet. Use the **'➕ Add New Trade'** section above to"
-      " add your first trade!"
+      " get started!"
   )
